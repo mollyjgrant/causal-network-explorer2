@@ -459,11 +459,136 @@ question = st.text_area(
 
 if question:
 
-    st.info(
-        "In the next version, an LLM will translate "
-        "this question into structured filters such "
-        "as outcome, developmental window, domain, "
-        "path length and minimum stability. "
-        "The graph retrieval itself will remain "
-        "deterministic in NetworkX."
-    )
+    if st.button("Query network"):
+
+        try:
+
+            interpretation = interpret_question(
+                question,
+                nodes
+            )
+
+            st.subheader("Question interpretation")
+
+            st.write(
+                interpretation["explanation"]
+            )
+
+            st.json(interpretation)
+
+            nl_outcome = interpretation[
+                "outcome_node"
+            ]
+
+            nl_periods = interpretation[
+                "periods"
+            ]
+
+            nl_domains = interpretation[
+                "domains"
+            ]
+
+            nl_steps = int(
+                interpretation["max_steps"]
+            )
+
+            nl_stability = float(
+                interpretation[
+                    "minimum_stability"
+                ]
+            )
+
+            nl_edges = edges[
+                edges["bootstrap_forward"]
+                >= nl_stability
+            ].copy()
+
+            nl_G = make_graph(nl_edges)
+
+            nl_H = upstream_subgraph(
+                nl_G,
+                nl_outcome,
+                nl_steps
+            )
+
+            keep_nodes = {
+                node
+                for node in nl_H.nodes
+                if (
+                    node == nl_outcome
+                    or (
+                        node_meta[node]["period"]
+                        in nl_periods
+                        and
+                        node_meta[node]["domain"]
+                        in nl_domains
+                    )
+                )
+            }
+
+            keep_nodes.add(nl_outcome)
+
+            nl_H = nl_H.subgraph(
+                keep_nodes
+            ).copy()
+
+            st.subheader(
+                "Retrieved network"
+            )
+
+            st.write(
+                f"Retrieved "
+                f"{nl_H.number_of_nodes()} nodes "
+                f"and "
+                f"{nl_H.number_of_edges()} edges."
+            )
+
+            if nl_H.number_of_edges() > 0:
+
+                st.graphviz_chart(
+                    graphviz_from_nx(nl_H),
+                    use_container_width=True
+                )
+
+            else:
+
+                st.warning(
+                    "No relationships met the "
+                    "interpreted query."
+                )
+
+            st.subheader(
+                "Candidate pathways"
+            )
+
+            nl_paths = create_path_table(
+                nl_H,
+                nl_outcome
+            )
+
+            if not nl_paths.empty:
+
+                st.dataframe(
+                    nl_paths.sort_values(
+                        [
+                            "weakest_edge",
+                            "mean_stability"
+                        ],
+                        ascending=False
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            else:
+
+                st.info(
+                    "No directed pathways were "
+                    "retrieved."
+                )
+
+        except Exception as e:
+
+            st.error(
+                f"Could not interpret the question: {e}"
+            )
