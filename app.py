@@ -178,31 +178,262 @@ if rows:
     ), use_container_width=True, hide_index=True)
 
 st.divider()
+
+# ==========================================
+# AUTOMATIC EDGE IMPACT RANKING
+# ==========================================
+
+st.subheader("Automatic edge impact ranking")
+
+st.caption(
+    "Each edge is removed one at a time to estimate how much "
+    "it changes the outcome-specific hypothesis-generating network."
+)
+
+if H.number_of_edges() == 0:
+
+    st.info("No edges available to rank.")
+
+else:
+
+    original_ancestors = set(
+        nx.ancestors(H, outcome)
+    )
+
+    edge_impact_results = []
+
+    for source, target in H.edges():
+
+        H_test = H.copy()
+
+        H_test.remove_edge(
+            source,
+            target
+        )
+
+        test_ancestors = set(
+            nx.ancestors(
+                H_test,
+                outcome
+            )
+        )
+
+        disconnected_nodes = (
+            original_ancestors
+            - test_ancestors
+        )
+
+        source_period = node_meta[source]["period"]
+        target_period = node_meta[target]["period"]
+
+        edge_impact_results.append(
+            {
+                "edge":
+                    f"{label_map[source]} "
+                    f"[{source_period}] → "
+                    f"{label_map[target]} "
+                    f"[{target_period}]",
+
+                "nodes_disconnected":
+                    len(disconnected_nodes),
+
+                "disconnected_nodes":
+                    ", ".join(
+                        f"{label_map[node]} "
+                        f"[{node_meta[node]['period']}]"
+                        for node in disconnected_nodes
+                    )
+            }
+        )
+
+    edge_impact_df = pd.DataFrame(
+        edge_impact_results
+    )
+
+    edge_impact_df = edge_impact_df.sort_values(
+        [
+            "nodes_disconnected"
+        ],
+        ascending=False
+    )
+
+    st.dataframe(
+        edge_impact_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# ==========================================
+# MANUAL EDGE-REMOVAL SENSITIVITY ANALYSIS
+# ==========================================
+
 st.subheader("Edge-removal sensitivity analysis")
-if H.number_of_edges():
-    options=[]
-    for s,t in H.edges():
-        options.append((s,t,f'{label_map[s]} [{node_meta[s]["period"]}] → {label_map[t]} [{node_meta[t]["period"]}]'))
-    labels=[x[2] for x in options]
-    chosen=st.selectbox("Select an edge to remove",labels)
-    idx=labels.index(chosen)
-    s,t=options[idx][0],options[idx][1]
+
+st.caption(
+    "Select an individual edge to inspect how its removal changes "
+    "the upstream structure for the selected outcome."
+)
+
+if H.number_of_edges() == 0:
+
+    st.info("No edges available to test.")
+
+else:
+
+    edge_options = []
+
+    for source, target in H.edges():
+
+        source_period = node_meta[source]["period"]
+        target_period = node_meta[target]["period"]
+
+        edge_options.append(
+            (
+                source,
+                target,
+                f"{label_map[source]} "
+                f"[{source_period}] → "
+                f"{label_map[target]} "
+                f"[{target_period}]"
+            )
+        )
+
+    edge_labels = [
+        item[2]
+        for item in edge_options
+    ]
+
+    selected_edge_label = st.selectbox(
+        "Select an edge to remove",
+        edge_labels
+    )
+
+    selected_index = edge_labels.index(
+        selected_edge_label
+    )
+
+    selected_source = edge_options[
+        selected_index
+    ][0]
+
+    selected_target = edge_options[
+        selected_index
+    ][1]
+
     if st.button("Test edge removal"):
-        original=set(nx.ancestors(H,outcome))
-        H2=H.copy(); H2.remove_edge(s,t)
-        after=set(nx.ancestors(H2,outcome))
-        lost=original-after
-        a,b=st.columns(2)
-        a.metric("Original upstream nodes",len(original))
-        b.metric("Upstream nodes after removal",len(after))
-        st.write("Disconnected upstream nodes:",
-                 ", ".join(f'{label_map[n]} [{node_meta[n]["period"]}]' for n in lost) if lost else "None")
-        st.graphviz_chart(graphviz_from_nx(H2), use_container_width=True)
+
+        # Original upstream structure
+        original_ancestors = set(
+            nx.ancestors(H, outcome)
+        )
+
+        # Remove selected edge
+        H_removed = H.copy()
+
+        H_removed.remove_edge(
+            selected_source,
+            selected_target
+        )
+
+        # Recalculate upstream structure
+        removed_ancestors = set(
+            nx.ancestors(
+                H_removed,
+                outcome
+            )
+        )
+
+        disconnected_nodes = (
+            original_ancestors
+            - removed_ancestors
+        )
+
+        # Display results
+        st.markdown(
+            f"### Removing: "
+            f"{label_map[selected_source]} "
+            f"[{node_meta[selected_source]['period']}] "
+            f"→ "
+            f"{label_map[selected_target]} "
+            f"[{node_meta[selected_target]['period']}]"
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Original upstream nodes",
+            len(original_ancestors)
+        )
+
+        col2.metric(
+            "Upstream nodes after removal",
+            len(removed_ancestors)
+        )
+
+        col3.metric(
+            "Nodes disconnected",
+            len(disconnected_nodes)
+        )
+
+        st.markdown(
+            "#### Upstream nodes disconnected"
+        )
+
+        if disconnected_nodes:
+
+            disconnected_labels = [
+                f"{label_map[node]} "
+                f"[{node_meta[node]['period']}]"
+                for node in disconnected_nodes
+            ]
+
+            st.write(
+                ", ".join(
+                    disconnected_labels
+                )
+            )
+
+        else:
+
+            st.write(
+                "No upstream nodes were completely disconnected."
+            )
+
+        st.markdown(
+            "#### Network after edge removal"
+        )
+
+        if H_removed.number_of_edges() > 0:
+
+            st.graphviz_chart(
+                graphviz_from_nx(
+                    H_removed
+                ),
+                use_container_width=True
+            )
+
+        else:
+
+            st.warning(
+                "Removing this edge leaves no remaining edges."
+            )
 
 st.divider()
 st.subheader("Natural-language network query")
-st.caption("The parser converts your question into graph filters, then NetworkX retrieves the matching subgraph.")
-question=st.text_area("Ask a question", placeholder="What built-environment and SES factors in pregnancy and infancy are upstream of executive function in middle childhood?")
+st.caption(
+    "The parser converts your question into graph filters, "
+    "then NetworkX retrieves the matching subgraph."
+)
+
+st.markdown("#### Example questions to copy and paste")
+st.code("What parenting factors are upstream of school readiness?", language=None)
+st.code("What parenting factors are connected to executive function?", language=None)
+
+question = st.text_area(
+    "Ask a question",
+    placeholder="Type or paste a research question here..."
+)
 if st.button("Run natural-language query"):
     if not question.strip():
         st.warning("Enter a question first.")
