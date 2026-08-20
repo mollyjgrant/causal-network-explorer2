@@ -499,11 +499,9 @@ else:
     edge_options = []
 
     for source, target in H.edges():
-
-       source_period = node_meta[source]["period"]
-target_period = node_meta[target]["period"]
-
-edge_options.append(
+        source_period = node_meta[source]["period"]
+        target_period = node_meta[target]["period"]
+        edge_options.append(
     (
         source,
         target,
