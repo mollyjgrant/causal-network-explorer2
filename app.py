@@ -20,7 +20,7 @@ def load_data():
 nodes, edges = load_data()
 
 client = OpenAI(
-    api_key=st.secrets["Key"]
+    api_key=st.secrets["OPENAI_API_KEY"]
 )
 
 label_map = dict(zip(nodes["node"], nodes["label"]))
