@@ -500,13 +500,18 @@ else:
 
     for source, target in H.edges():
 
-        edge_options.append(
-            (
-                source,
-                target,
-                f"{label_map[source]} → {label_map[target]}"
-            )
-        )
+       source_period = node_meta[source]["period"]
+target_period = node_meta[target]["period"]
+
+edge_options.append(
+    (
+        source,
+        target,
+        f"{label_map[source]} [{source_period}] "
+        f"→ "
+        f"{label_map[target]} [{target_period}]"
+    )
+)
 
     edge_labels = [
         item[2]
