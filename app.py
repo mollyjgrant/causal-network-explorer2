@@ -147,7 +147,77 @@ def create_path_table(H, outcome, max_paths=200):
 
     return pd.DataFrame(rows)
 
+def interpret_question(question, nodes):
 
+    available_nodes = nodes[
+        ["node", "label", "period", "domain"]
+    ].to_dict(orient="records")
+
+    available_periods = sorted(
+        nodes["period"].unique().tolist()
+    )
+
+    available_domains = sorted(
+        nodes["domain"].unique().tolist()
+    )
+
+    prompt = f"""
+You are helping a researcher query a developmental network.
+
+Your ONLY task is to translate the researcher's natural-language
+question into graph-query parameters.
+
+Do not answer the scientific question.
+Do not invent relationships.
+Only select values supported by the available network metadata.
+
+AVAILABLE NODES:
+{available_nodes}
+
+AVAILABLE DEVELOPMENTAL PERIODS:
+{available_periods}
+
+AVAILABLE DOMAINS:
+{available_domains}
+
+RESEARCHER QUESTION:
+{question}
+
+Return valid JSON with exactly these fields:
+
+{{
+  "outcome_node": "node id",
+  "periods": ["period1", "period2"],
+  "domains": ["domain1", "domain2"],
+  "max_steps": 3,
+  "minimum_stability": 0.65,
+  "explanation": "brief explanation of how the question was interpreted"
+}}
+
+Rules:
+- outcome_node must exactly match one available node id.
+- periods must contain only available periods.
+- domains must contain only available domains.
+- max_steps must be between 1 and 5.
+- minimum_stability must be between 0.50 and 1.00.
+- If the user does not restrict period or domain, include all relevant values.
+"""
+
+    response = client.responses.create(
+        model="gpt-5-mini",
+        input=prompt
+    )
+
+    text = response.output_text
+
+    text = (
+        text.replace("```json", "")
+        .replace("```", "")
+        .strip()
+    )
+
+    return json.loads(text)
+    
 st.title(
     "Developmental causal-network explorer"
 )
