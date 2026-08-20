@@ -1,929 +1,231 @@
-
 import streamlit as st
 import pandas as pd
 import networkx as nx
 import graphviz
-import json
+import re
 
-st.set_page_config(
-    page_title="Developmental Network Explorer",
-    layout="wide"
-)
+st.set_page_config(page_title="Developmental Network Explorer", layout="wide")
 
 @st.cache_data
 def load_data():
-    nodes = pd.read_csv("nodes.csv")
-    edges = pd.read_csv("edges.csv")
-    return nodes, edges
+    return pd.read_csv("nodes.csv"), pd.read_csv("edges.csv")
 
 nodes, edges = load_data()
-
 label_map = dict(zip(nodes["node"], nodes["label"]))
 node_meta = nodes.set_index("node").to_dict("index")
 
-
 def make_graph(edge_df):
     G = nx.DiGraph()
-
     for _, row in nodes.iterrows():
-        G.add_node(
-            row["node"],
-            **row.to_dict()
-        )
-
+        G.add_node(row["node"], **row.to_dict())
     for _, row in edge_df.iterrows():
-        G.add_edge(
-            row["from"],
-            row["to"],
-            bootstrap_forward=row["bootstrap_forward"],
-            bootstrap_reverse=row["bootstrap_reverse"]
-        )
-
+        G.add_edge(row["from"], row["to"],
+                   bootstrap_forward=row["bootstrap_forward"],
+                   bootstrap_reverse=row["bootstrap_reverse"])
     return G
 
-
 def upstream_subgraph(G, outcome, max_steps):
-    keep = {outcome}
-    frontier = {outcome}
-
+    keep, frontier = {outcome}, {outcome}
     for _ in range(max_steps):
         new_frontier = set()
-
         for node in frontier:
             new_frontier.update(G.predecessors(node))
-
         new_frontier -= keep
         keep.update(new_frontier)
         frontier = new_frontier
-
         if not frontier:
             break
-
     return G.subgraph(keep).copy()
-
 
 def graphviz_from_nx(H):
     dot = graphviz.Digraph()
-
     dot.attr(rankdir="LR")
-
     for node in H.nodes:
         meta = node_meta[node]
-
-        node_label = (
-            f'{meta["label"]}\n'
-            f'[{meta["period"]}]'
-        )
-
-        dot.node(
-            node,
-            label=node_label,
-            shape="box"
-        )
-
-    for source, target, data in H.edges(data=True):
-        stability = data.get(
-            "bootstrap_forward",
-            0
-        )
-
-        dot.edge(
-            source,
-            target,
-            label=f"{stability:.2f}"
-        )
-
+        dot.node(node, label=f'{meta["label"]}\n[{meta["period"]}]', shape="box")
+    for s, t, data in H.edges(data=True):
+        dot.edge(s, t, label=f'{data.get("bootstrap_forward",0):.2f}')
     return dot
 
-
-def create_path_table(H, outcome, max_paths=200):
-    rows = []
-
-    if outcome not in H:
-        return pd.DataFrame()
-
-    ancestors = nx.ancestors(H, outcome)
-
-    for source in ancestors:
-        try:
-            for path in nx.all_simple_paths(
-                H,
-                source=source,
-                target=outcome
-            ):
-
-                if len(path) <= 6:
-
-                    edge_stabilities = [
-                        H[path[i]][path[i + 1]]["bootstrap_forward"]
-                        for i in range(len(path) - 1)
-                    ]
-
-                    rows.append(
-                        {
-                            "source": label_map[source],
-                            "path": " → ".join(
-                                label_map[node]
-                                for node in path
-                            ),
-                            "steps": len(path) - 1,
-                            "weakest_edge": min(edge_stabilities),
-                            "mean_stability":
-                                sum(edge_stabilities)
-                                / len(edge_stabilities)
-                        }
-                    )
-
-                    if len(rows) >= max_paths:
-                        return pd.DataFrame(rows)
-
-        except nx.NetworkXNoPath:
-            pass
-
-    return pd.DataFrame(rows)
-
-def interpret_question(question, nodes):
-
+def interpret_question(question):
     q = question.lower()
 
-    # -----------------------------
-    # 1. Identify outcome
-    # -----------------------------
-    outcome_node = None
+    outcome = "executive_function_6y"
+    explicit = []
+    for _, row in nodes.iterrows():
+        if str(row["label"]).lower() in q:
+            explicit.append(row)
+    if explicit:
+        outcome = sorted(explicit, key=lambda r: r["age_order"], reverse=True)[0]["node"]
+    elif "school readiness" in q:
+        outcome = "school_readiness_6y"
+    elif "socio-emotional" in q or "socioemotional" in q:
+        outcome = "child_socioemotional_6y"
+    elif "self-regulation" in q or "self regulation" in q:
+        outcome = "child_selfreg_3y"
 
-    outcome_keywords = {
-        "executive function": ["ef_6y", "ef_3y"],
-        "school readiness": ["school_readiness_6y"],
-        "socio-emotional": ["socioemotional_6y", "socioemotional_3y"],
-        "self-regulation": ["child_selfreg_1y"]
-    }
-
-    for phrase, candidates in outcome_keywords.items():
-        if phrase in q:
-            # Prefer later measurement if multiple exist
-            outcome_node = candidates[0]
-            break
-
-    # Fallback
-    if outcome_node is None:
-        outcome_node = "ef_6y"
-
-    # -----------------------------
-    # 2. Identify periods
-    # -----------------------------
     period_map = {
-        "pregnancy": "Pregnancy",
-        "prenatal": "Pregnancy",
-        "infancy": "Infancy",
-        "infant": "Infancy",
-        "early childhood": "Early childhood",
-        "middle childhood": "Middle childhood"
+        "pregnancy":"Pregnancy","prenatal":"Pregnancy","antenatal":"Pregnancy",
+        "infancy":"Infancy","infant":"Infancy",
+        "early childhood":"Early childhood","preschool":"Early childhood",
+        "middle childhood":"Middle childhood","school age":"Middle childhood"
     }
-
     periods = []
-
-    for phrase, period in period_map.items():
-        if phrase in q and period not in periods:
-            periods.append(period)
-
-    if len(periods) == 0:
+    for k,v in period_map.items():
+        if k in q and v not in periods:
+            periods.append(v)
+    if "early life" in q or "early-life" in q:
+        periods = ["Pregnancy","Infancy","Early childhood"]
+    if not periods:
         periods = nodes["period"].unique().tolist()
 
-    # -----------------------------
-    # 3. Identify domains
-    # -----------------------------
     domain_map = {
-        "caregiving": "Caregiving",
-        "parenting": "Caregiving",
-        "caregiver wellbeing": "Caregiver wellbeing",
-        "mental health": "Mental health",
-        "anxiety": "Mental health",
-        "sleep": "Sleep",
-        "socioeconomic": "SES",
-        "ses": "SES",
-        "environment": "Environment",
-        "physical activity": "Behaviour",
-        "screen time": "Behaviour",
-        "behaviour": "Behaviour",
-        "metabolic": "Metabolic",
-        "social support": "Social support"
+        "built environment":"Built environment","neighbourhood":"Built environment",
+        "neighborhood":"Built environment","green space":"Built environment",
+        "housing":"Built environment","traffic":"Built environment",
+        "services":"Built environment","play space":"Built environment",
+        "ses":"SES","socioeconomic":"SES","income":"SES","education":"SES",
+        "parenting":"Parenting","caregiving":"Parenting","reading":"Parenting",
+        "parent wellbeing":"Parent wellbeing","parenting stress":"Parent wellbeing",
+        "maternal stress":"Parent wellbeing","development":"Development",
+        "child development":"Development"
     }
-
     domains = []
-
-    for phrase, domain in domain_map.items():
-        if phrase in q and domain not in domains:
-            domains.append(domain)
-
-    if len(domains) == 0:
+    for k,v in domain_map.items():
+        if k in q and v not in domains:
+            domains.append(v)
+    if not domains:
         domains = nodes["domain"].unique().tolist()
 
-    # -----------------------------
-    # 4. Infer max steps
-    # -----------------------------
-    max_steps = 4
+    max_steps = 1 if any(x in q for x in ["direct","immediate","one step"]) else 4
+    m = re.search(r'(\d)\s*(?:step|steps)', q)
+    if m:
+        max_steps = max(1, min(5, int(m.group(1))))
 
-    if "direct" in q:
-        max_steps = 1
-
-    # -----------------------------
-    # 5. Infer stability threshold
-    # -----------------------------
-    minimum_stability = 0.65
-
-    if "robust" in q or "strong" in q:
-        minimum_stability = 0.80
-
-    if "exploratory" in q or "all possible" in q:
-        minimum_stability = 0.50
-
-    explanation = (
-        f"Interpreted outcome as {outcome_node}; "
-        f"periods as {periods}; "
-        f"domains as {domains}; "
-        f"maximum path length as {max_steps}; "
-        f"minimum bootstrap stability as {minimum_stability}."
-    )
+    min_stability = 0.65
+    if any(x in q for x in ["robust","strong","high confidence","high-confidence"]):
+        min_stability = 0.80
+    if any(x in q for x in ["exploratory","broad","all possible","include weaker"]):
+        min_stability = 0.50
 
     return {
-        "outcome_node": outcome_node,
+        "outcome_node": outcome,
         "periods": periods,
         "domains": domains,
         "max_steps": max_steps,
-        "minimum_stability": minimum_stability,
-        "explanation": explanation
+        "minimum_stability": min_stability
     }
-    
-st.title(
-    "Developmental causal-network explorer"
-)
 
-st.caption(
-    "Synthetic demonstration. Network relationships are "
-    "hypothesis-generating and should not be interpreted "
-    "as established causal effects."
-)
+def run_query(settings):
+    q_edges = edges[edges["bootstrap_forward"] >= settings["minimum_stability"]].copy()
+    q_G = make_graph(q_edges)
+    q_H = upstream_subgraph(q_G, settings["outcome_node"], settings["max_steps"])
+    keep = {
+        n for n in q_H.nodes
+        if n == settings["outcome_node"]
+        or (node_meta[n]["period"] in settings["periods"]
+            and node_meta[n]["domain"] in settings["domains"])
+    }
+    return q_H.subgraph(keep).copy()
 
+st.title("Developmental causal-network explorer")
+st.caption("Synthetic demonstration for hypothesis generation only.")
 
 with st.sidebar:
+    st.header("Manual network query")
+    opts = nodes.copy()
+    opts["display"] = opts["label"] + " [" + opts["period"] + "]"
+    default_i = opts.index[opts["node"]=="executive_function_6y"][0]
+    display = st.selectbox("Outcome", opts["display"].tolist(), index=default_i)
+    outcome = opts.loc[opts["display"]==display, "node"].iloc[0]
+    min_stability = st.slider("Minimum bootstrap edge frequency",0.50,1.00,0.65,0.05)
+    max_steps = st.slider("Maximum upstream steps",1,5,4)
+    all_domains = sorted(nodes["domain"].unique())
+    domains = st.multiselect("Keep source domains",all_domains,default=all_domains)
 
-    st.header("Query the network")
+G = make_graph(edges[edges["bootstrap_forward"]>=min_stability])
+H = upstream_subgraph(G, outcome, max_steps)
+H = H.subgraph({n for n in H.nodes if n==outcome or node_meta[n]["domain"] in domains}).copy()
 
-    outcome_labels = sorted(
-        nodes["label"].unique()
-    )
-
-    default_index = (
-        outcome_labels.index("Executive function")
-        if "Executive function" in outcome_labels
-        else 0
-    )
-
-    outcome_label = st.selectbox(
-        "Outcome",
-        outcome_labels,
-        index=default_index
-    )
-
-    matching = nodes[
-        nodes["label"] == outcome_label
-    ].copy()
-
-    matching["display"] = (
-        matching["label"]
-        + " — "
-        + matching["period"]
-    )
-
-    chosen_display = st.selectbox(
-        "Measurement",
-        matching["display"]
-    )
-
-    outcome = matching.loc[
-        matching["display"] == chosen_display,
-        "node"
-    ].iloc[0]
-
-    min_stability = st.slider(
-        "Minimum bootstrap edge frequency",
-        min_value=0.50,
-        max_value=1.00,
-        value=0.65,
-        step=0.05
-    )
-
-    max_steps = st.slider(
-        "Maximum upstream steps",
-        min_value=1,
-        max_value=5,
-        value=3
-    )
-
-    all_domains = sorted(
-        nodes["domain"].unique()
-    )
-
-    domains = st.multiselect(
-        "Keep source domains",
-        all_domains,
-        default=all_domains
-    )
-
-
-filtered_edges = edges[
-    edges["bootstrap_forward"]
-    >= min_stability
-].copy()
-
-G = make_graph(filtered_edges)
-
-H = upstream_subgraph(
-    G,
-    outcome,
-    max_steps
-)
-
-keep_nodes = {
-    node
-    for node in H.nodes
-    if (
-        node == outcome
-        or node_meta[node]["domain"]
-        in domains
-    )
-}
-
-H = H.subgraph(
-    keep_nodes
-).copy()
-
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric(
-    "Retrieved nodes",
-    H.number_of_nodes()
-)
-
-col2.metric(
-    "Retrieved edges",
-    H.number_of_edges()
-)
-
-col3.metric(
-    "Outcome ancestors",
-    len(nx.ancestors(H, outcome))
-    if outcome in H
-    else 0
-)
-
+c1,c2,c3 = st.columns(3)
+c1.metric("Retrieved nodes",H.number_of_nodes())
+c2.metric("Retrieved edges",H.number_of_edges())
+c3.metric("Outcome ancestors",len(nx.ancestors(H,outcome)) if outcome in H else 0)
 
 st.subheader("Retrieved subgraph")
-
-if H.number_of_edges() == 0:
-
-    st.warning(
-        "No upstream edges meet the current filters."
-    )
-
+if H.number_of_edges():
+    st.graphviz_chart(graphviz_from_nx(H), use_container_width=True)
 else:
+    st.warning("No upstream edges meet the current filters.")
 
-    st.graphviz_chart(
-        graphviz_from_nx(H),
-        use_container_width=True
-    )
-
-
-st.subheader("Candidate pathways")
-
-paths = create_path_table(
-    H,
-    outcome
-)
-
-if paths.empty:
-
-    st.info(
-        "No directed paths found under the "
-        "current filters."
-    )
-
-else:
-
-    st.dataframe(
-        paths.sort_values(
-            [
-                "weakest_edge",
-                "mean_stability"
-            ],
-            ascending=False
-        ),
-        use_container_width=True,
-        hide_index=True
-    )
-
-
-st.subheader(
-    "Structurally important nodes"
-)
-
-if H.number_of_nodes() > 1:
-
-    betweenness = nx.betweenness_centrality(H)
-
-    importance = []
-
-    for node in H.nodes:
-
-        if node == outcome:
-            continue
-
-        descendants = nx.descendants(
-            H,
-            node
-        )
-
-        importance.append(
-            {
-                "node": label_map[node],
-                "period":
-                    node_meta[node]["period"],
-                "domain":
-                    node_meta[node]["domain"],
-                "descendants_in_subgraph":
-                    len(descendants),
-                "betweenness":
-                    betweenness.get(node, 0)
-            }
-        )
-
-    importance = pd.DataFrame(
-        importance
-    )
-
-    if not importance.empty:
-
-        st.dataframe(
-            importance.sort_values(
-                [
-                    "descendants_in_subgraph",
-                    "betweenness"
-                ],
-                ascending=False
-            ),
-            use_container_width=True,
-            hide_index=True
-        )
-
-
-# ==========================================
-# EDGE-REMOVAL SENSITIVITY ANALYSIS
-# ==========================================
+st.subheader("Structurally important nodes")
+rows=[]
+for n in H.nodes:
+    if n==outcome:
+        continue
+    rows.append({
+        "node":label_map[n],
+        "period":node_meta[n]["period"],
+        "domain":node_meta[n]["domain"],
+        "descendants_in_subgraph":len(nx.descendants(H,n)),
+        "incoming_edges":H.in_degree(n),
+        "outgoing_edges":H.out_degree(n),
+        "total_edges":H.in_degree(n)+H.out_degree(n)
+    })
+if rows:
+    st.dataframe(pd.DataFrame(rows).sort_values(
+        ["descendants_in_subgraph","total_edges"], ascending=False
+    ), use_container_width=True, hide_index=True)
 
 st.divider()
-# ==========================================
-# AUTOMATIC EDGE IMPACT RANKING
-# ==========================================
-
-st.subheader("Automatic edge impact ranking")
-
-st.caption(
-    "Each edge is removed one at a time to estimate how much "
-    "it changes the outcome-specific hypothesis-generating network."
-)
-
-if H.number_of_edges() == 0:
-
-    st.info("No edges available to rank.")
-
-else:
-
-    original_ancestors = set(
-        nx.ancestors(H, outcome)
-    )
-
-    original_paths = create_path_table(
-        H,
-        outcome
-    )
-
-    original_path_count = len(original_paths)
-
-    edge_impact_results = []
-
-    for source, target in H.edges():
-
-        H_test = H.copy()
-
-        H_test.remove_edge(
-            source,
-            target
-        )
-
-        test_ancestors = set(
-            nx.ancestors(
-                H_test,
-                outcome
-            )
-        )
-
-        test_paths = create_path_table(
-            H_test,
-            outcome
-        )
-
-        test_path_count = len(
-            test_paths
-        )
-
-        pathways_lost = (
-            original_path_count
-            - test_path_count
-        )
-
-        if original_path_count > 0:
-
-            percent_paths_lost = (
-                pathways_lost
-                / original_path_count
-                * 100
-            )
-
-        else:
-
-            percent_paths_lost = 0
-
-        disconnected_nodes = (
-            original_ancestors
-            - test_ancestors
-        )
-
-        source_period = node_meta[source]["period"]
-        target_period = node_meta[target]["period"]
-
-        edge_impact_results.append(
-            {
-                "edge":
-                    f"{label_map[source]} "
-                    f"[{source_period}] → "
-                    f"{label_map[target]} "
-                    f"[{target_period}]",
-
-                "source":
-                    label_map[source],
-
-                "target":
-                    label_map[target],
-
-                "pathways_lost":
-                    pathways_lost,
-
-                "percent_paths_lost":
-                    percent_paths_lost,
-
-                "nodes_disconnected":
-                    len(disconnected_nodes),
-
-                "disconnected_nodes":
-                    ", ".join(
-                        label_map[node]
-                        for node in disconnected_nodes
-                    )
-            }
-        )
-
-    edge_impact_df = pd.DataFrame(
-        edge_impact_results
-    )
-
-    edge_impact_df = edge_impact_df.sort_values(
-        [
-            "percent_paths_lost",
-            "nodes_disconnected"
-        ],
-        ascending=False
-    )
-
-    st.dataframe(
-        edge_impact_df,
-        use_container_width=True,
-        hide_index=True
-    )
 st.subheader("Edge-removal sensitivity analysis")
-
-st.caption(
-    "Test how removing a single edge changes the "
-    "outcome-specific network and candidate pathways."
-)
-
-if H.number_of_edges() == 0:
-
-    st.info("No edges available to test.")
-
-else:
-
-    edge_options = []
-
-    for source, target in H.edges():
-        source_period = node_meta[source]["period"]
-        target_period = node_meta[target]["period"]
-        edge_options.append(
-    (
-        source,
-        target,
-        f"{label_map[source]} [{source_period}] "
-        f"→ "
-        f"{label_map[target]} [{target_period}]"
-    )
-)
-
-    edge_labels = [
-        item[2]
-        for item in edge_options
-    ]
-
-    selected_edge_label = st.selectbox(
-        "Select an edge to remove",
-        edge_labels
-    )
-
-    selected_index = edge_labels.index(
-        selected_edge_label
-    )
-
-    selected_source = edge_options[selected_index][0]
-    selected_target = edge_options[selected_index][1]
-
+if H.number_of_edges():
+    options=[]
+    for s,t in H.edges():
+        options.append((s,t,f'{label_map[s]} [{node_meta[s]["period"]}] → {label_map[t]} [{node_meta[t]["period"]}]'))
+    labels=[x[2] for x in options]
+    chosen=st.selectbox("Select an edge to remove",labels)
+    idx=labels.index(chosen)
+    s,t=options[idx][0],options[idx][1]
     if st.button("Test edge removal"):
-
-        # Original network
-        original_ancestors = set(
-            nx.ancestors(H, outcome)
-        )
-
-        original_paths = create_path_table(
-            H,
-            outcome
-        )
-
-        original_path_count = len(original_paths)
-
-        # Remove selected edge
-        H_removed = H.copy()
-
-        H_removed.remove_edge(
-            selected_source,
-            selected_target
-        )
-
-        # Recalculate network
-        removed_ancestors = set(
-            nx.ancestors(H_removed, outcome)
-        )
-
-        removed_paths = create_path_table(
-            H_removed,
-            outcome
-        )
-
-        removed_path_count = len(removed_paths)
-
-        # Identify changes
-        disconnected_nodes = (
-            original_ancestors
-            - removed_ancestors
-        )
-
-        pathways_lost = (
-            original_path_count
-            - removed_path_count
-        )
-
-        if original_path_count > 0:
-            percent_paths_lost = (
-                pathways_lost
-                / original_path_count
-                * 100
-            )
-        else:
-            percent_paths_lost = 0
-
-        # Display results
-        st.markdown(
-            f"### Removing: "
-            f"{label_map[selected_source]} "
-            f"→ "
-            f"{label_map[selected_target]}"
-        )
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric(
-            "Original pathways",
-            original_path_count
-        )
-
-        col2.metric(
-            "Pathways after removal",
-            removed_path_count
-        )
-
-        col3.metric(
-            "% pathways lost",
-            f"{percent_paths_lost:.1f}%"
-        )
-
-        st.markdown(
-            "#### Upstream nodes disconnected"
-        )
-
-        if disconnected_nodes:
-
-            disconnected_labels = [
-                label_map[node]
-                for node in disconnected_nodes
-            ]
-
-            st.write(
-                ", ".join(disconnected_labels)
-            )
-
-        else:
-
-            st.write(
-                "No upstream nodes were completely disconnected."
-            )
-
-        st.markdown(
-            "#### Network after edge removal"
-        )
-
-        if H_removed.number_of_edges() > 0:
-
-            st.graphviz_chart(
-                graphviz_from_nx(H_removed),
-                use_container_width=True
-            )
-
-        else:
-
-            st.warning(
-                "Removing this edge leaves no remaining edges."
-            )
-
-
-# ==========================================
-# NATURAL-LANGUAGE QUERY
-# ==========================================
+        original=set(nx.ancestors(H,outcome))
+        H2=H.copy(); H2.remove_edge(s,t)
+        after=set(nx.ancestors(H2,outcome))
+        lost=original-after
+        a,b=st.columns(2)
+        a.metric("Original upstream nodes",len(original))
+        b.metric("Upstream nodes after removal",len(after))
+        st.write("Disconnected upstream nodes:",
+                 ", ".join(f'{label_map[n]} [{node_meta[n]["period"]}]' for n in lost) if lost else "None")
+        st.graphviz_chart(graphviz_from_nx(H2), use_container_width=True)
 
 st.divider()
-st.subheader(
-    "Natural-language research question — prototype"
-)
-
-question = st.text_area(
-    "Ask a question",
-    placeholder=(
-        "e.g. What pregnancy and infancy factors "
-        "are upstream of executive function in "
-        "middle childhood, particularly through "
-        "caregiving?"
-    )
-)
-
-if question:
-
-    if st.button("Query network"):
-
-        try:
-
-            interpretation = interpret_question(
-                question,
-                nodes
-            )
-
-            st.subheader("Question interpretation")
-
-            st.write(
-                interpretation["explanation"]
-            )
-
-            st.json(interpretation)
-
-            nl_outcome = interpretation[
-                "outcome_node"
-            ]
-
-            nl_periods = interpretation[
-                "periods"
-            ]
-
-            nl_domains = interpretation[
-                "domains"
-            ]
-
-            nl_steps = int(
-                interpretation["max_steps"]
-            )
-
-            nl_stability = float(
-                interpretation[
-                    "minimum_stability"
-                ]
-            )
-
-            nl_edges = edges[
-                edges["bootstrap_forward"]
-                >= nl_stability
-            ].copy()
-
-            nl_G = make_graph(nl_edges)
-
-            nl_H = upstream_subgraph(
-                nl_G,
-                nl_outcome,
-                nl_steps
-            )
-
-            keep_nodes = {
-                node
-                for node in nl_H.nodes
-                if (
-                    node == nl_outcome
-                    or (
-                        node_meta[node]["period"]
-                        in nl_periods
-                        and
-                        node_meta[node]["domain"]
-                        in nl_domains
-                    )
-                )
-            }
-
-            keep_nodes.add(nl_outcome)
-
-            nl_H = nl_H.subgraph(
-                keep_nodes
-            ).copy()
-
-            st.subheader(
-                "Retrieved network"
-            )
-
-            st.write(
-                f"Retrieved "
-                f"{nl_H.number_of_nodes()} nodes "
-                f"and "
-                f"{nl_H.number_of_edges()} edges."
-            )
-
-            if nl_H.number_of_edges() > 0:
-
-                st.graphviz_chart(
-                    graphviz_from_nx(nl_H),
-                    use_container_width=True
-                )
-
-            else:
-
-                st.warning(
-                    "No relationships met the "
-                    "interpreted query."
-                )
-
-            st.subheader(
-                "Candidate pathways"
-            )
-
-            nl_paths = create_path_table(
-                nl_H,
-                nl_outcome
-            )
-
-            if not nl_paths.empty:
-
-                st.dataframe(
-                    nl_paths.sort_values(
-                        [
-                            "weakest_edge",
-                            "mean_stability"
-                        ],
-                        ascending=False
-                    ),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-            else:
-
-                st.info(
-                    "No directed pathways were "
-                    "retrieved."
-                )
-
-        except Exception as e:
-
-            st.error(
-                f"Could not interpret the question: {e}"
-            )
+st.subheader("Natural-language network query")
+st.caption("The parser converts your question into graph filters, then NetworkX retrieves the matching subgraph.")
+question=st.text_area("Ask a question", placeholder="What built-environment and SES factors in pregnancy and infancy are upstream of executive function in middle childhood?")
+if st.button("Run natural-language query"):
+    if not question.strip():
+        st.warning("Enter a question first.")
+    else:
+        settings=interpret_question(question)
+        st.write(
+            f'Outcome: {label_map[settings["outcome_node"]]} [{node_meta[settings["outcome_node"]]["period"]}] | '
+            f'Periods: {", ".join(settings["periods"])} | '
+            f'Domains: {", ".join(settings["domains"])} | '
+            f'Max steps: {settings["max_steps"]} | '
+            f'Minimum stability: {settings["minimum_stability"]:.2f}'
+        )
+        Q=run_query(settings)
+        q1,q2,q3=st.columns(3)
+        q1.metric("Retrieved nodes",Q.number_of_nodes())
+        q2.metric("Retrieved edges",Q.number_of_edges())
+        q3.metric("Outcome ancestors",len(nx.ancestors(Q,settings["outcome_node"])) if settings["outcome_node"] in Q else 0)
+        if Q.number_of_edges():
+            st.graphviz_chart(graphviz_from_nx(Q), use_container_width=True)
+        else:
+            st.warning("No relationships met the interpreted query.")
+        out=[]
+        for n in Q.nodes:
+            out.append({"node":label_map[n],"period":node_meta[n]["period"],"domain":node_meta[n]["domain"]})
+        if out:
+            st.dataframe(pd.DataFrame(out), use_container_width=True, hide_index=True)
