@@ -1,1 +1,32 @@
 
+node,label,person,period,domain,age_order,modifiable
+maternal_education,Maternal education,mother,Pregnancy,SES,0,FALSE
+family_income,Family income,family,Pregnancy,SES,0,TRUE
+area_ses,Area socioeconomic disadvantage,family,Pregnancy,Environment,0,TRUE
+social_support_preg,Maternal social support,mother,Pregnancy,Social support,0,TRUE
+maternal_anxiety_preg,Maternal anxiety symptoms,mother,Pregnancy,Mental health,0,TRUE
+maternal_sleep_preg,Maternal sleep quality,mother,Pregnancy,Sleep,0,TRUE
+maternal_bmi,Pre-pregnancy BMI,mother,Pregnancy,Metabolic,0,TRUE
+fasting_glucose,Maternal fasting glucose,mother,Pregnancy,Metabolic,0,TRUE
+pm25_preg,Prenatal PM2.5 exposure,child,Pregnancy,Environment,0,TRUE
+parenting_stress_1y,Parenting stress,caregiver,Infancy,Caregiver wellbeing,1,TRUE
+caregiver_sleep_1y,Caregiver sleep quality,caregiver,Infancy,Sleep,1,TRUE
+responsive_parenting_1y,Responsive parenting,caregiver,Infancy,Caregiving,1,TRUE
+reading_1y,Shared reading,caregiver,Infancy,Caregiving,1,TRUE
+child_sleep_1y,Child sleep duration,child,Infancy,Sleep,1,TRUE
+child_selfreg_1y,Child self-regulation,child,Infancy,Self-regulation,1,TRUE
+parenting_stress_3y,Parenting stress,caregiver,Early childhood,Caregiver wellbeing,3,TRUE
+responsive_parenting_3y,Responsive parenting,caregiver,Early childhood,Caregiving,3,TRUE
+screen_time_3y,Child screen time,child,Early childhood,Behaviour,3,TRUE
+physical_activity_3y,Child physical activity,child,Early childhood,Behaviour,3,TRUE
+child_sleep_3y,Child sleep duration,child,Early childhood,Sleep,3,TRUE
+ef_3y,Executive function,child,Early childhood,Executive function,3,TRUE
+socioemotional_3y,Socio-emotional functioning,child,Early childhood,Socio-emotional,3,TRUE
+parenting_stress_6y,Parenting stress,caregiver,Middle childhood,Caregiver wellbeing,6,TRUE
+responsive_parenting_6y,Responsive parenting,caregiver,Middle childhood,Caregiving,6,TRUE
+screen_time_6y,Child screen time,child,Middle childhood,Behaviour,6,TRUE
+physical_activity_6y,Child physical activity,child,Middle childhood,Behaviour,6,TRUE
+child_sleep_6y,Child sleep duration,child,Middle childhood,Sleep,6,TRUE
+ef_6y,Executive function,child,Middle childhood,Executive function,6,TRUE
+socioemotional_6y,Socio-emotional functioning,child,Middle childhood,Socio-emotional,6,TRUE
+school_readiness_6y,School readiness,child,Middle childhood,Education,6,TRUE
