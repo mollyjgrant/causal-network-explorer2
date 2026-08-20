@@ -478,7 +478,58 @@ if H.number_of_nodes() > 1:
 
 
 st.divider()
+# -------------------------
+# Retrieved subgraph
+# -------------------------
 
+st.subheader("Retrieved subgraph")
+...
+
+
+# -------------------------
+# Candidate pathways
+# -------------------------
+
+st.subheader("Candidate pathways")
+...
+
+
+# -------------------------
+# Structurally important nodes
+# -------------------------
+
+st.subheader(
+    "Structurally important nodes"
+)
+...
+
+
+# -----------------------------------
+# ADD EDGE SENSITIVITY CODE HERE
+# -----------------------------------
+
+st.subheader(
+    "Edge-removal sensitivity analysis"
+)
+
+if H.number_of_edges() == 0:
+    ...
+
+# all the sensitivity code I gave you
+...
+
+
+# -----------------------------------
+# NATURAL LANGUAGE QUERY
+# -----------------------------------
+
+st.subheader(
+    "Natural-language research question — prototype"
+)
+
+question = st.text_area(
+    ...
+)
 st.subheader(
     "Natural-language research question — prototype"
 )
