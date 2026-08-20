@@ -47,6 +47,38 @@ def graphviz_from_nx(H):
         dot.edge(s, t, label=f'{data.get("bootstrap_forward",0):.2f}')
     return dot
 
+
+def create_path_table(H, outcome, max_paths=200):
+    rows = []
+
+    if outcome not in H:
+        return pd.DataFrame()
+
+    ancestors = nx.ancestors(H, outcome)
+
+    for source in ancestors:
+        try:
+            for path in nx.all_simple_paths(
+                H,
+                source=source,
+                target=outcome
+            ):
+                rows.append(
+                    {
+                        "source": source,
+                        "path": path
+                    }
+                )
+
+                if len(rows) >= max_paths:
+                    return pd.DataFrame(rows)
+
+        except nx.NetworkXNoPath:
+            pass
+
+    return pd.DataFrame(rows)
+
+
 def interpret_question(question):
     q = question.lower()
 
@@ -196,10 +228,7 @@ if H.number_of_edges() == 0:
 
 else:
 
-    # --------------------------------------
     # Original network
-    # --------------------------------------
-
     original_ancestors = set(
         nx.ancestors(H, outcome)
     )
@@ -215,10 +244,7 @@ else:
 
     edge_impact_results = []
 
-    # --------------------------------------
     # Remove each edge one at a time
-    # --------------------------------------
-
     for source, target in H.edges():
 
         H_test = H.copy()
@@ -246,10 +272,7 @@ else:
             test_paths
         )
 
-        # ----------------------------------
         # Calculate structural impact
-        # ----------------------------------
-
         pathways_lost = (
             original_path_count
             - test_path_count
@@ -275,10 +298,7 @@ else:
         source_period = node_meta[source]["period"]
         target_period = node_meta[target]["period"]
 
-        # ----------------------------------
         # Store results
-        # ----------------------------------
-
         edge_impact_results.append(
             {
                 "Edge":
@@ -307,10 +327,7 @@ else:
             }
         )
 
-    # --------------------------------------
     # Create ranked table
-    # --------------------------------------
-
     edge_impact_df = pd.DataFrame(
         edge_impact_results
     )
@@ -394,9 +411,18 @@ else:
 
     if st.button("Test edge removal"):
 
-        # Original upstream structure
+        # Original network
         original_ancestors = set(
             nx.ancestors(H, outcome)
+        )
+
+        original_paths = create_path_table(
+            H,
+            outcome
+        )
+
+        original_path_count = len(
+            original_paths
         )
 
         # Remove selected edge
@@ -407,7 +433,7 @@ else:
             selected_target
         )
 
-        # Recalculate upstream structure
+        # Recalculate
         removed_ancestors = set(
             nx.ancestors(
                 H_removed,
@@ -415,10 +441,36 @@ else:
             )
         )
 
+        removed_paths = create_path_table(
+            H_removed,
+            outcome
+        )
+
+        removed_path_count = len(
+            removed_paths
+        )
+
         disconnected_nodes = (
             original_ancestors
             - removed_ancestors
         )
+
+        pathways_lost = (
+            original_path_count
+            - removed_path_count
+        )
+
+        if original_path_count > 0:
+
+            percent_paths_lost = (
+                pathways_lost
+                / original_path_count
+                * 100
+            )
+
+        else:
+
+            percent_paths_lost = 0
 
         # Display results
         st.markdown(
@@ -430,19 +482,24 @@ else:
             f"[{node_meta[selected_target]['period']}]"
         )
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         col1.metric(
-            "Original upstream nodes",
-            len(original_ancestors)
+            "Original pathways",
+            original_path_count
         )
 
         col2.metric(
-            "Upstream nodes after removal",
-            len(removed_ancestors)
+            "Paths lost",
+            pathways_lost
         )
 
         col3.metric(
+            "% paths lost",
+            f"{percent_paths_lost:.1f}%"
+        )
+
+        col4.metric(
             "Nodes disconnected",
             len(disconnected_nodes)
         )
@@ -489,6 +546,7 @@ else:
             st.warning(
                 "Removing this edge leaves no remaining edges."
             )
+
 
 st.divider()
 st.subheader("Natural-language network query")
