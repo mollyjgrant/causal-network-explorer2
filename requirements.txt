@@ -2,4 +2,3 @@ streamlit
 pandas
 networkx
 graphviz
-openai
