@@ -196,11 +196,28 @@ if H.number_of_edges() == 0:
 
 else:
 
+    # --------------------------------------
+    # Original network
+    # --------------------------------------
+
     original_ancestors = set(
         nx.ancestors(H, outcome)
     )
 
+    original_paths = create_path_table(
+        H,
+        outcome
+    )
+
+    original_path_count = len(
+        original_paths
+    )
+
     edge_impact_results = []
+
+    # --------------------------------------
+    # Remove each edge one at a time
+    # --------------------------------------
 
     for source, target in H.edges():
 
@@ -211,12 +228,44 @@ else:
             target
         )
 
+        # Recalculate ancestors
         test_ancestors = set(
             nx.ancestors(
                 H_test,
                 outcome
             )
         )
+
+        # Recalculate paths
+        test_paths = create_path_table(
+            H_test,
+            outcome
+        )
+
+        test_path_count = len(
+            test_paths
+        )
+
+        # ----------------------------------
+        # Calculate structural impact
+        # ----------------------------------
+
+        pathways_lost = (
+            original_path_count
+            - test_path_count
+        )
+
+        if original_path_count > 0:
+
+            percent_paths_lost = (
+                pathways_lost
+                / original_path_count
+                * 100
+            )
+
+        else:
+
+            percent_paths_lost = 0
 
         disconnected_nodes = (
             original_ancestors
@@ -226,18 +275,30 @@ else:
         source_period = node_meta[source]["period"]
         target_period = node_meta[target]["period"]
 
+        # ----------------------------------
+        # Store results
+        # ----------------------------------
+
         edge_impact_results.append(
             {
-                "edge":
-                    f"{label_map[source]} "
-                    f"[{source_period}] → "
-                    f"{label_map[target]} "
-                    f"[{target_period}]",
+                "Edge":
+                    f"{label_map[source]} → "
+                    f"{label_map[target]}",
 
-                "nodes_disconnected":
+                "Timepoints":
+                    f"{source_period} → "
+                    f"{target_period}",
+
+                "Paths lost":
+                    pathways_lost,
+
+                "% paths lost":
+                    percent_paths_lost,
+
+                "Nodes disconnected":
                     len(disconnected_nodes),
 
-                "disconnected_nodes":
+                "Disconnected nodes":
                     ", ".join(
                         f"{label_map[node]} "
                         f"[{node_meta[node]['period']}]"
@@ -246,15 +307,25 @@ else:
             }
         )
 
+    # --------------------------------------
+    # Create ranked table
+    # --------------------------------------
+
     edge_impact_df = pd.DataFrame(
         edge_impact_results
     )
 
     edge_impact_df = edge_impact_df.sort_values(
         [
-            "nodes_disconnected"
+            "% paths lost",
+            "Nodes disconnected"
         ],
         ascending=False
+    )
+
+    edge_impact_df["% paths lost"] = (
+        edge_impact_df["% paths lost"]
+        .round(1)
     )
 
     st.dataframe(
