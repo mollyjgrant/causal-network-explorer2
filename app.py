@@ -144,74 +144,115 @@ def create_path_table(H, outcome, max_paths=200):
 
 def interpret_question(question, nodes):
 
-    available_nodes = nodes[
-        ["node", "label", "period", "domain"]
-    ].to_dict(orient="records")
+    q = question.lower()
 
-    available_periods = sorted(
-        nodes["period"].unique().tolist()
+    # -----------------------------
+    # 1. Identify outcome
+    # -----------------------------
+    outcome_node = None
+
+    outcome_keywords = {
+        "executive function": ["ef_6y", "ef_3y"],
+        "school readiness": ["school_readiness_6y"],
+        "socio-emotional": ["socioemotional_6y", "socioemotional_3y"],
+        "self-regulation": ["child_selfreg_1y"]
+    }
+
+    for phrase, candidates in outcome_keywords.items():
+        if phrase in q:
+            # Prefer later measurement if multiple exist
+            outcome_node = candidates[0]
+            break
+
+    # Fallback
+    if outcome_node is None:
+        outcome_node = "ef_6y"
+
+    # -----------------------------
+    # 2. Identify periods
+    # -----------------------------
+    period_map = {
+        "pregnancy": "Pregnancy",
+        "prenatal": "Pregnancy",
+        "infancy": "Infancy",
+        "infant": "Infancy",
+        "early childhood": "Early childhood",
+        "middle childhood": "Middle childhood"
+    }
+
+    periods = []
+
+    for phrase, period in period_map.items():
+        if phrase in q and period not in periods:
+            periods.append(period)
+
+    if len(periods) == 0:
+        periods = nodes["period"].unique().tolist()
+
+    # -----------------------------
+    # 3. Identify domains
+    # -----------------------------
+    domain_map = {
+        "caregiving": "Caregiving",
+        "parenting": "Caregiving",
+        "caregiver wellbeing": "Caregiver wellbeing",
+        "mental health": "Mental health",
+        "anxiety": "Mental health",
+        "sleep": "Sleep",
+        "socioeconomic": "SES",
+        "ses": "SES",
+        "environment": "Environment",
+        "physical activity": "Behaviour",
+        "screen time": "Behaviour",
+        "behaviour": "Behaviour",
+        "metabolic": "Metabolic",
+        "social support": "Social support"
+    }
+
+    domains = []
+
+    for phrase, domain in domain_map.items():
+        if phrase in q and domain not in domains:
+            domains.append(domain)
+
+    if len(domains) == 0:
+        domains = nodes["domain"].unique().tolist()
+
+    # -----------------------------
+    # 4. Infer max steps
+    # -----------------------------
+    max_steps = 4
+
+    if "direct" in q:
+        max_steps = 1
+
+    # -----------------------------
+    # 5. Infer stability threshold
+    # -----------------------------
+    minimum_stability = 0.65
+
+    if "robust" in q or "strong" in q:
+        minimum_stability = 0.80
+
+    if "exploratory" in q or "all possible" in q:
+        minimum_stability = 0.50
+
+    explanation = (
+        f"Interpreted outcome as {outcome_node}; "
+        f"periods as {periods}; "
+        f"domains as {domains}; "
+        f"maximum path length as {max_steps}; "
+        f"minimum bootstrap stability as {minimum_stability}."
     )
 
-    available_domains = sorted(
-        nodes["domain"].unique().tolist()
-    )
-
-    prompt = f"""
-You are helping a researcher query a developmental network.
-
-Your ONLY task is to translate the researcher's natural-language
-question into graph-query parameters.
-
-Do not answer the scientific question.
-Do not invent relationships.
-Only select values supported by the available network metadata.
-
-AVAILABLE NODES:
-{available_nodes}
-
-AVAILABLE DEVELOPMENTAL PERIODS:
-{available_periods}
-
-AVAILABLE DOMAINS:
-{available_domains}
-
-RESEARCHER QUESTION:
-{question}
-
-Return valid JSON with exactly these fields:
-
-{{
-  "outcome_node": "node id",
-  "periods": ["period1", "period2"],
-  "domains": ["domain1", "domain2"],
-  "max_steps": 3,
-  "minimum_stability": 0.65,
-  "explanation": "brief explanation of how the question was interpreted"
-}}
-
-Rules:
-- outcome_node must exactly match one available node id.
-- periods must contain only available periods.
-- domains must contain only available domains.
-- max_steps must be between 1 and 5.
-- minimum_stability must be between 0.50 and 1.00.
-- If the user does not restrict period or domain, include all relevant values.
-"""
-
-    response = client.responses.create(
-        model="gpt-5-mini",
-        input=prompt
-    )
-
-    text = response.output_text
-
-    text = (
-        text.replace("```json", "")
-        .replace("```", "")
-        .strip()
-    )
-
-    return json.loads(text)
+    return {
+        "outcome_node": outcome_node,
+        "periods": periods,
+        "domains": domains,
+        "max_steps": max_steps,
+        "minimum_stability": minimum_stability,
+        "explanation": explanation
+    }
     
 st.title(
     "Developmental causal-network explorer"
