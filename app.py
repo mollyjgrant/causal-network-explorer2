@@ -477,59 +477,177 @@ if H.number_of_nodes() > 1:
         )
 
 
+# ==========================================
+# EDGE-REMOVAL SENSITIVITY ANALYSIS
+# ==========================================
+
 st.divider()
-# -------------------------
-# Retrieved subgraph
-# -------------------------
 
-st.subheader("Retrieved subgraph")
-...
+st.subheader("Edge-removal sensitivity analysis")
 
-
-# -------------------------
-# Candidate pathways
-# -------------------------
-
-st.subheader("Candidate pathways")
-...
-
-
-# -------------------------
-# Structurally important nodes
-# -------------------------
-
-st.subheader(
-    "Structurally important nodes"
-)
-...
-
-
-# -----------------------------------
-# ADD EDGE SENSITIVITY CODE HERE
-# -----------------------------------
-
-st.subheader(
-    "Edge-removal sensitivity analysis"
+st.caption(
+    "Test how removing a single edge changes the "
+    "outcome-specific network and candidate pathways."
 )
 
 if H.number_of_edges() == 0:
-    ...
 
-# all the sensitivity code I gave you
-...
+    st.info("No edges available to test.")
+
+else:
+
+    edge_options = []
+
+    for source, target in H.edges():
+
+        edge_options.append(
+            (
+                source,
+                target,
+                f"{label_map[source]} → {label_map[target]}"
+            )
+        )
+
+    edge_labels = [
+        item[2]
+        for item in edge_options
+    ]
+
+    selected_edge_label = st.selectbox(
+        "Select an edge to remove",
+        edge_labels
+    )
+
+    selected_index = edge_labels.index(
+        selected_edge_label
+    )
+
+    selected_source = edge_options[selected_index][0]
+    selected_target = edge_options[selected_index][1]
+
+    if st.button("Test edge removal"):
+
+        # Original network
+        original_ancestors = set(
+            nx.ancestors(H, outcome)
+        )
+
+        original_paths = create_path_table(
+            H,
+            outcome
+        )
+
+        original_path_count = len(original_paths)
+
+        # Remove selected edge
+        H_removed = H.copy()
+
+        H_removed.remove_edge(
+            selected_source,
+            selected_target
+        )
+
+        # Recalculate network
+        removed_ancestors = set(
+            nx.ancestors(H_removed, outcome)
+        )
+
+        removed_paths = create_path_table(
+            H_removed,
+            outcome
+        )
+
+        removed_path_count = len(removed_paths)
+
+        # Identify changes
+        disconnected_nodes = (
+            original_ancestors
+            - removed_ancestors
+        )
+
+        pathways_lost = (
+            original_path_count
+            - removed_path_count
+        )
+
+        if original_path_count > 0:
+            percent_paths_lost = (
+                pathways_lost
+                / original_path_count
+                * 100
+            )
+        else:
+            percent_paths_lost = 0
+
+        # Display results
+        st.markdown(
+            f"### Removing: "
+            f"{label_map[selected_source]} "
+            f"→ "
+            f"{label_map[selected_target]}"
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Original pathways",
+            original_path_count
+        )
+
+        col2.metric(
+            "Pathways after removal",
+            removed_path_count
+        )
+
+        col3.metric(
+            "% pathways lost",
+            f"{percent_paths_lost:.1f}%"
+        )
+
+        st.markdown(
+            "#### Upstream nodes disconnected"
+        )
+
+        if disconnected_nodes:
+
+            disconnected_labels = [
+                label_map[node]
+                for node in disconnected_nodes
+            ]
+
+            st.write(
+                ", ".join(disconnected_labels)
+            )
+
+        else:
+
+            st.write(
+                "No upstream nodes were completely disconnected."
+            )
+
+        st.markdown(
+            "#### Network after edge removal"
+        )
+
+        if H_removed.number_of_edges() > 0:
+
+            st.graphviz_chart(
+                graphviz_from_nx(H_removed),
+                use_container_width=True
+            )
+
+        else:
+
+            st.warning(
+                "Removing this edge leaves no remaining edges."
+            )
 
 
-# -----------------------------------
-# NATURAL LANGUAGE QUERY
-# -----------------------------------
+# ==========================================
+# NATURAL-LANGUAGE QUERY
+# ==========================================
 
-st.subheader(
-    "Natural-language research question — prototype"
-)
-
-question = st.text_area(
-    ...
-)
+st.divider()
 st.subheader(
     "Natural-language research question — prototype"
 )
