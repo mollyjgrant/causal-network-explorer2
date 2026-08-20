@@ -482,7 +482,134 @@ if H.number_of_nodes() > 1:
 # ==========================================
 
 st.divider()
+# ==========================================
+# AUTOMATIC EDGE IMPACT RANKING
+# ==========================================
 
+st.subheader("Automatic edge impact ranking")
+
+st.caption(
+    "Each edge is removed one at a time to estimate how much "
+    "it changes the outcome-specific hypothesis-generating network."
+)
+
+if H.number_of_edges() == 0:
+
+    st.info("No edges available to rank.")
+
+else:
+
+    original_ancestors = set(
+        nx.ancestors(H, outcome)
+    )
+
+    original_paths = create_path_table(
+        H,
+        outcome
+    )
+
+    original_path_count = len(original_paths)
+
+    edge_impact_results = []
+
+    for source, target in H.edges():
+
+        H_test = H.copy()
+
+        H_test.remove_edge(
+            source,
+            target
+        )
+
+        test_ancestors = set(
+            nx.ancestors(
+                H_test,
+                outcome
+            )
+        )
+
+        test_paths = create_path_table(
+            H_test,
+            outcome
+        )
+
+        test_path_count = len(
+            test_paths
+        )
+
+        pathways_lost = (
+            original_path_count
+            - test_path_count
+        )
+
+        if original_path_count > 0:
+
+            percent_paths_lost = (
+                pathways_lost
+                / original_path_count
+                * 100
+            )
+
+        else:
+
+            percent_paths_lost = 0
+
+        disconnected_nodes = (
+            original_ancestors
+            - test_ancestors
+        )
+
+        source_period = node_meta[source]["period"]
+        target_period = node_meta[target]["period"]
+
+        edge_impact_results.append(
+            {
+                "edge":
+                    f"{label_map[source]} "
+                    f"[{source_period}] → "
+                    f"{label_map[target]} "
+                    f"[{target_period}]",
+
+                "source":
+                    label_map[source],
+
+                "target":
+                    label_map[target],
+
+                "pathways_lost":
+                    pathways_lost,
+
+                "percent_paths_lost":
+                    percent_paths_lost,
+
+                "nodes_disconnected":
+                    len(disconnected_nodes),
+
+                "disconnected_nodes":
+                    ", ".join(
+                        label_map[node]
+                        for node in disconnected_nodes
+                    )
+            }
+        )
+
+    edge_impact_df = pd.DataFrame(
+        edge_impact_results
+    )
+
+    edge_impact_df = edge_impact_df.sort_values(
+        [
+            "percent_paths_lost",
+            "nodes_disconnected"
+        ],
+        ascending=False
+    )
+
+    st.dataframe(
+        edge_impact_df,
+        use_container_width=True,
+        hide_index=True
+    )
 st.subheader("Edge-removal sensitivity analysis")
 
 st.caption(
