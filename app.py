@@ -74,70 +74,136 @@ def count_paths_to_outcome(H, outcome):
 
 
 def interpret_question(question):
-    q = question.lower()
+    """
+    Interpret a research question into:
+      - anchor node (construct + timepoint)
+      - direction (upstream/downstream)
+      - optional filters on returned factors (domain + timepoint)
+      - bootstrap threshold
 
-    outcome = "executive_function_6y"
-    explicit = []
-    for _, row in nodes.iterrows():
-        if str(row["label"]).lower() in q:
-            explicit.append(row)
-    if explicit:
-        outcome = sorted(explicit, key=lambda r: r["age_order"], reverse=True)[0]["node"]
-    elif "school readiness" in q:
-        outcome = "school_readiness_6y"
-    elif "socio-emotional" in q or "socioemotional" in q:
-        outcome = "child_socioemotional_6y"
-    elif "self-regulation" in q or "self regulation" in q:
-        outcome = "child_selfreg_3y"
-
-    period_map = {
-        "pregnancy":"Pregnancy","prenatal":"Pregnancy","antenatal":"Pregnancy",
-        "infancy":"Infancy","infant":"Infancy",
-        "early childhood":"Early childhood","preschool":"Early childhood",
-        "middle childhood":"Middle childhood","school age":"Middle childhood"
-    }
-    periods = []
-    for k,v in period_map.items():
-        if k in q and v not in periods:
-            periods.append(v)
-    if "early life" in q or "early-life" in q:
-        periods = ["Pregnancy","Infancy","Early childhood"]
-    if not periods:
-        periods = nodes["period"].unique().tolist()
-
-    domain_map = {
-        "built environment":"Built environment","neighbourhood":"Built environment",
-        "neighborhood":"Built environment","green space":"Built environment",
-        "housing":"Built environment","traffic":"Built environment",
-        "services":"Built environment","play space":"Built environment",
-        "ses":"SES","socioeconomic":"SES","income":"SES","education":"SES",
-        "parenting":"Parenting","caregiving":"Parenting","reading":"Parenting",
-        "parent wellbeing":"Parent wellbeing","parenting stress":"Parent wellbeing",
-        "maternal stress":"Parent wellbeing","development":"Development",
-        "child development":"Development"
-    }
-    domains = []
-    for k,v in domain_map.items():
-        if k in q and v not in domains:
-            domains.append(v)
-    if not domains:
-        domains = nodes["domain"].unique().tolist()
-
-    min_stability = 0.65
-    if any(x in q for x in ["robust","strong","high confidence","high-confidence"]):
-        min_stability = 0.80
-    if any(x in q for x in ["exploratory","broad","all possible","include weaker"]):
-        min_stability = 0.50
+    This is intentionally rule-based for the prototype.
+    """
+    q = question.lower().strip()
 
     direction = "downstream" if "downstream" in q else "upstream"
 
-    return {
-        "outcome_node": outcome,
-        "periods": periods,
-        "domains": domains,
-        "minimum_stability": min_stability,
-        "direction": direction
+    period_terms = {
+        "Pregnancy": ["pregnancy", "prenatal", "antenatal"],
+        "Infancy": ["infancy", "infant", "first year", "1 year", "1y"],
+        "Early childhood": ["early childhood", "3 year", "3y"],
+        "Middle childhood": ["middle childhood", "6 year", "6y"],
     }
+
+    domain_terms = {
+        "SES": ["ses", "socioeconomic", "socio-economic"],
+        "Environmental": ["environment", "environmental", "air pollution",
+                          "pm2.5", "heat stress", "green space", "noise"],
+        "Parenting": ["parenting", "parental", "caregiving"],
+        "Eating behaviours": ["eating", "eating behaviour", "eating behaviors",
+                              "feeding", "diet", "food"],
+        "School readiness": ["school readiness", "executive function",
+                             "executive functioning", "language", "numeracy"],
+    }
+
+    # Split around the directional phrase. For:
+    # "What parenting factors in early childhood are downstream of parenting stress in infancy?"
+    # left side = requested-factor filters; right side = anchor.
+    phrase = "downstream of" if direction == "downstream" else "upstream of"
+    if phrase in q:
+        left_text, anchor_text = q.split(phrase, 1)
+    else:
+        left_text, anchor_text = q, q
+
+    def periods_in(s):
+        found = []
+        for canonical, terms in period_terms.items():
+            if any(term in s for term in terms):
+                found.append(canonical)
+        return found
+
+    def domains_in(s):
+        found = []
+        for canonical, terms in domain_terms.items():
+            if any(term in s for term in terms):
+                found.append(canonical)
+        return found
+
+    # Anchor period is determined ONLY from the text after "upstream/downstream of".
+    anchor_periods = periods_in(anchor_text)
+    anchor_period = anchor_periods[0] if anchor_periods else None
+
+    # Match anchor label, preferring the longest label phrase so repeated/overlapping
+    # constructs are less likely to be confused.
+    candidate_rows = nodes.copy()
+    candidate_rows["label_lower"] = candidate_rows["label"].str.lower()
+
+    if anchor_period is not None:
+        candidate_rows = candidate_rows[
+            candidate_rows["period"] == anchor_period
+        ]
+
+    # Aliases for common construct wording.
+    anchor_aliases = {
+        "executive functioning": "executive function",
+        "executive functions": "executive function",
+        "ef": "executive function",
+    }
+    normalized_anchor_text = anchor_text
+    for alias, canonical in anchor_aliases.items():
+        normalized_anchor_text = normalized_anchor_text.replace(alias, canonical)
+
+    matches = []
+    for _, row in candidate_rows.iterrows():
+        label = row["label_lower"]
+        if label in normalized_anchor_text:
+            matches.append((len(label), row["node"]))
+
+    if matches:
+        matches.sort(reverse=True)
+        anchor_node = matches[0][1]
+    else:
+        # Fallback: score labels by token overlap with the anchor phrase.
+        anchor_tokens = set(re.findall(r"[a-z0-9.]+", normalized_anchor_text))
+        best_node = None
+        best_score = -1
+        for _, row in candidate_rows.iterrows():
+            label_tokens = set(re.findall(r"[a-z0-9.]+", row["label_lower"]))
+            score = len(anchor_tokens & label_tokens)
+            if score > best_score:
+                best_score = score
+                best_node = row["node"]
+        anchor_node = best_node
+
+    if anchor_node is None:
+        raise ValueError("Could not identify an anchor variable from the question.")
+
+    # Filters for returned factors come ONLY from the text before the relationship phrase.
+    result_periods = periods_in(left_text)
+    result_domains = domains_in(left_text)
+
+    # Generic "what factors..." means do not restrict domain/timepoint.
+    if not result_periods:
+        result_periods = nodes["period"].dropna().unique().tolist()
+
+    if not result_domains:
+        result_domains = nodes["domain"].dropna().unique().tolist()
+
+    min_stability = 0.65
+    if any(x in q for x in ["robust", "strong", "high confidence", "high-confidence"]):
+        min_stability = 0.80
+    if any(x in q for x in ["exploratory", "broad", "all possible", "include weaker"]):
+        min_stability = 0.50
+
+    return {
+        "outcome_node": anchor_node,   # retained for compatibility with existing app code
+        "anchor_node": anchor_node,
+        "anchor_period": node_meta[anchor_node]["period"],
+        "periods": result_periods,
+        "domains": result_domains,
+        "minimum_stability": min_stability,
+        "direction": direction,
+    }
+
 
 def run_query(settings):
     """
@@ -571,16 +637,17 @@ st.caption(
 )
 
 # --------------------------------------------------
-# 1. BUILD-YOUR-QUESTION STRIP
+# 1. BUILD-YOUR-QUESTION
 # --------------------------------------------------
 
 st.markdown("### Build your question")
 
-builder_col1, builder_col2, builder_col3, builder_col4 = st.columns(4)
-
-available_domains = sorted(
-    nodes["domain"].dropna().unique().tolist()
+st.caption(
+    "Choose the variable you want to start from, the direction to search, "
+    "and optionally restrict the factors returned."
 )
+
+anchor_col1, anchor_col2, direction_col = st.columns(3)
 
 available_periods = [
     p for p in [
@@ -592,57 +659,59 @@ available_periods = [
     if p in nodes["period"].unique().tolist()
 ]
 
-outcome_options = nodes.copy()
-outcome_options["display"] = (
-    outcome_options["label"]
-    + " ["
-    + outcome_options["period"]
-    + "]"
-)
-
-with builder_col1:
-    builder_domain = st.selectbox(
-        "Domain",
-        available_domains,
-        key="builder_domain"
+with anchor_col1:
+    builder_anchor_period = st.selectbox(
+        "Anchor timepoint",
+        available_periods,
+        key="builder_anchor_period"
     )
 
-with builder_col2:
-    builder_period = st.selectbox(
-        "Timepoint",
-        ["Any timepoint"] + available_periods,
-        key="builder_period"
+anchor_candidates = nodes[
+    nodes["period"] == builder_anchor_period
+].copy()
+
+anchor_candidates["display"] = anchor_candidates["label"]
+
+with anchor_col2:
+    builder_anchor_display = st.selectbox(
+        "Anchor variable",
+        anchor_candidates["display"].tolist(),
+        key="builder_anchor"
     )
 
-with builder_col3:
+builder_anchor_label = anchor_candidates.loc[
+    anchor_candidates["display"] == builder_anchor_display,
+    "label"
+].iloc[0]
+
+with direction_col:
     builder_relation = st.selectbox(
         "Relationship",
-        [
-            "Upstream",
-            "Downstream"
-        ],
+        ["Upstream", "Downstream"],
         key="builder_relation"
     )
 
-with builder_col4:
-    default_outcome_idx = 0
-    sr_matches = outcome_options.index[
-        outcome_options["label"].str.lower() == "school readiness"
-    ].tolist()
-    if sr_matches:
-        default_outcome_idx = sr_matches[0]
+st.markdown("**Filter factors returned (optional)**")
 
-    builder_outcome_display = st.selectbox(
-        "Outcome",
-        outcome_options["display"].tolist(),
-        index=default_outcome_idx,
-        key="builder_outcome"
+filter_col1, filter_col2 = st.columns(2)
+
+available_domains = sorted(
+    nodes["domain"].dropna().unique().tolist()
+)
+
+with filter_col1:
+    builder_domain = st.selectbox(
+        "Factor domain",
+        ["All domains"] + available_domains,
+        key="builder_domain"
     )
 
-builder_outcome_label = outcome_options.loc[
-    outcome_options["display"] == builder_outcome_display,
-    "label"
-].iloc[0]
+with filter_col2:
+    builder_period = st.selectbox(
+        "Factor timepoint",
+        ["Any timepoint"] + available_periods,
+        key="builder_period"
+    )
 
 relation_phrase = (
     "upstream of"
@@ -650,15 +719,23 @@ relation_phrase = (
     else "downstream of"
 )
 
-if builder_period == "Any timepoint":
+factor_bits = []
+if builder_period != "Any timepoint":
+    factor_bits.append(builder_period.lower())
+if builder_domain != "All domains":
+    factor_bits.append(builder_domain.lower())
+
+factor_description = " ".join(factor_bits)
+
+if factor_description:
     generated_question = (
-        f"What {builder_domain.lower()} factors are "
-        f"{relation_phrase} {builder_outcome_label.lower()}?"
+        f"What {factor_description} factors are {relation_phrase} "
+        f"{builder_anchor_label.lower()} in {builder_anchor_period.lower()}?"
     )
 else:
     generated_question = (
-        f"What {builder_period.lower()} {builder_domain.lower()} factors are "
-        f"{relation_phrase} {builder_outcome_label.lower()}?"
+        f"What factors are {relation_phrase} "
+        f"{builder_anchor_label.lower()} in {builder_anchor_period.lower()}?"
     )
 
 st.markdown("**Suggested question**")
