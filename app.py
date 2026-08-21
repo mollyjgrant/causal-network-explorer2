@@ -129,71 +129,77 @@ def interpret_question(question):
     if any(x in q for x in ["exploratory","broad","all possible","include weaker"]):
         min_stability = 0.50
 
+    direction = "downstream" if "downstream" in q else "upstream"
+
     return {
         "outcome_node": outcome,
         "periods": periods,
         "domains": domains,
-        "minimum_stability": min_stability
+        "minimum_stability": min_stability,
+        "direction": direction
     }
 
 def run_query(settings):
     """
-    Retrieve all upstream nodes matching the requested source filters,
-    then retain every node and edge needed to connect those matching
-    source nodes to the selected outcome.
+    Retrieve matching source nodes in the requested direction and retain the
+    graph structure connecting them to the selected anchor/outcome node.
     """
     q_edges = edges[
         edges["bootstrap_forward"] >= settings["minimum_stability"]
     ].copy()
 
     q_G = make_graph(q_edges)
+    anchor = settings["outcome_node"]
+    direction = settings.get("direction", "upstream")
 
-    outcome = settings["outcome_node"]
+    if direction == "downstream":
+        candidate_nodes = set(nx.descendants(q_G, anchor))
 
-    # All nodes that are upstream of the selected outcome
-    all_ancestors = set(
-        nx.ancestors(q_G, outcome)
-    )
-
-    # Identify the upstream nodes that match the researcher's
-    # requested developmental periods and domains.
-    matching_sources = {
-        n for n in all_ancestors
-        if (
-            node_meta[n]["period"] in settings["periods"]
-            and node_meta[n]["domain"] in settings["domains"]
-        )
-    }
-
-    # Keep the selected matching source nodes AND every node that lies
-    # on at least one directed route from those sources to the outcome.
-    keep_nodes = {outcome}
-
-    for source in matching_sources:
-
-        keep_nodes.add(source)
-
-        try:
-            # descendants(source) ∩ ancestors(outcome) are nodes that can lie
-            # downstream of the source while still remaining upstream of outcome.
-            connecting_nodes = (
-                set(nx.descendants(q_G, source))
-                & all_ancestors
+        matching_nodes = {
+            n for n in candidate_nodes
+            if (
+                node_meta[n]["period"] in settings["periods"]
+                and node_meta[n]["domain"] in settings["domains"]
             )
+        }
 
-            # Retain only connecting nodes that are reachable from source
-            # and can still reach the outcome.
+        keep_nodes = {anchor}
+
+        for target in matching_nodes:
+            keep_nodes.add(target)
+
+            # Nodes on at least one directed route anchor -> target
+            connecting_nodes = (
+                set(nx.descendants(q_G, anchor))
+                & set(nx.ancestors(q_G, target))
+            )
             keep_nodes.update(connecting_nodes)
 
-        except nx.NetworkXError:
-            pass
+    else:
+        candidate_nodes = set(nx.ancestors(q_G, anchor))
 
-    # Restrict to the ancestor network for the outcome.
-    q_H = q_G.subgraph(
-        keep_nodes
-    ).copy()
+        matching_nodes = {
+            n for n in candidate_nodes
+            if (
+                node_meta[n]["period"] in settings["periods"]
+                and node_meta[n]["domain"] in settings["domains"]
+            )
+        }
 
-    return q_H
+        keep_nodes = {anchor}
+
+        for source in matching_nodes:
+            keep_nodes.add(source)
+
+            # Nodes on at least one directed route source -> anchor
+            connecting_nodes = (
+                set(nx.descendants(q_G, source))
+                & set(nx.ancestors(q_G, anchor))
+            )
+            keep_nodes.update(connecting_nodes)
+
+    return q_G.subgraph(keep_nodes).copy()
+
 
 st.title("Developmental causal-network explorer")
 st.caption("Synthetic demonstration for hypothesis generation only.")
@@ -565,72 +571,7 @@ st.caption(
 )
 
 # --------------------------------------------------
-# 1. QUESTION-TYPE CARDS
-# --------------------------------------------------
-
-st.markdown("### What would you like to explore?")
-
-if "nl_question" not in st.session_state:
-    st.session_state["nl_question"] = ""
-
-card1, card2, card3, card4 = st.columns(4)
-
-with card1:
-    st.markdown("#### 🔎 Influences")
-    st.caption("Explore factors upstream of a developmental outcome.")
-    st.code(
-        "What parenting factors are upstream of school readiness?",
-        language=None
-    )
-    if st.button("Try Influences", key="card_influences"):
-        st.session_state["nl_question"] = (
-            "What parenting factors are upstream of school readiness?"
-        )
-        st.rerun()
-
-with card2:
-    st.markdown("#### 🔗 Connections")
-    st.caption("Explore how a domain is connected to an outcome.")
-    st.code(
-        "What environmental factors are connected to school readiness?",
-        language=None
-    )
-    if st.button("Try Connections", key="card_connections"):
-        st.session_state["nl_question"] = (
-            "What environmental factors are connected to school readiness?"
-        )
-        st.rerun()
-
-with card3:
-    st.markdown("#### 🧭 Development")
-    st.caption("Focus on factors from a particular developmental period.")
-    st.code(
-        "What infancy parenting factors are upstream of school readiness?",
-        language=None
-    )
-    if st.button("Try Development", key="card_development"):
-        st.session_state["nl_question"] = (
-            "What infancy parenting factors are upstream of school readiness?"
-        )
-        st.rerun()
-
-with card4:
-    st.markdown("#### 🧩 Domains")
-    st.caption("Explore one scientific domain in relation to an outcome.")
-    st.code(
-        "What eating behaviour factors are upstream of school readiness?",
-        language=None
-    )
-    if st.button("Try Domains", key="card_domains"):
-        st.session_state["nl_question"] = (
-            "What eating behaviour factors are upstream of school readiness?"
-        )
-        st.rerun()
-
-st.divider()
-
-# --------------------------------------------------
-# 2. BUILD-YOUR-QUESTION STRIP
+# 1. BUILD-YOUR-QUESTION STRIP
 # --------------------------------------------------
 
 st.markdown("### Build your question")
@@ -677,8 +618,8 @@ with builder_col3:
     builder_relation = st.selectbox(
         "Relationship",
         [
-            "upstream of",
-            "connected to"
+            "Upstream",
+            "Downstream"
         ],
         key="builder_relation"
     )
@@ -703,15 +644,21 @@ builder_outcome_label = outcome_options.loc[
     "label"
 ].iloc[0]
 
+relation_phrase = (
+    "upstream of"
+    if builder_relation == "Upstream"
+    else "downstream of"
+)
+
 if builder_period == "Any timepoint":
     generated_question = (
         f"What {builder_domain.lower()} factors are "
-        f"{builder_relation} {builder_outcome_label.lower()}?"
+        f"{relation_phrase} {builder_outcome_label.lower()}?"
     )
 else:
     generated_question = (
         f"What {builder_period.lower()} {builder_domain.lower()} factors are "
-        f"{builder_relation} {builder_outcome_label.lower()}?"
+        f"{relation_phrase} {builder_outcome_label.lower()}?"
     )
 
 st.markdown("**Suggested question**")
@@ -724,7 +671,7 @@ if st.button("Use this question", key="use_builder_question"):
 st.divider()
 
 # --------------------------------------------------
-# 3. FREE-TEXT QUERY
+# 2. FREE-TEXT QUERY
 # --------------------------------------------------
 
 st.markdown("### Ask your own question")
@@ -755,6 +702,7 @@ if st.button("Run natural-language query", key="run_nl_query"):
             f'[{node_meta[settings["outcome_node"]]["period"]}]  \n'
             f'**Source timepoints:** {", ".join(settings["periods"])}  \n'
             f'**Source domains:** {", ".join(settings["domains"])}  \n'
+            f'**Direction:** {settings["direction"].capitalize()}  \n'
             f'**Minimum bootstrap frequency:** '
             f'{settings["minimum_stability"]:.2f}'
         )
