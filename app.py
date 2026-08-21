@@ -41,35 +41,36 @@ def graphviz_from_nx(H):
     return dot
 
 
-def create_path_table(H, outcome, max_paths=200):
-    rows = []
-
+def count_paths_to_outcome(H, outcome):
+    """
+    Count all directed paths from every upstream ancestor to the outcome.
+    Uses dynamic programming on a DAG, so it does not need to enumerate
+    individual paths or impose an arbitrary cap.
+    """
     if outcome not in H:
-        return pd.DataFrame()
+        return 0
 
-    ancestors = nx.ancestors(H, outcome)
+    if not nx.is_directed_acyclic_graph(H):
+        raise ValueError(
+            "Path-impact analysis requires a DAG, but the retrieved graph contains a cycle."
+        )
 
-    for source in ancestors:
-        try:
-            for path in nx.all_simple_paths(
-                H,
-                source=source,
-                target=outcome
-            ):
-                rows.append(
-                    {
-                        "source": source,
-                        "path": path
-                    }
-                )
+    # Only nodes that can reach the outcome are relevant.
+    relevant = set(nx.ancestors(H, outcome))
+    relevant.add(outcome)
+    R = H.subgraph(relevant).copy()
 
-                if len(rows) >= max_paths:
-                    return pd.DataFrame(rows)
+    # paths_from[node] = number of distinct directed paths from node to outcome.
+    paths_from = {node: 0 for node in R.nodes}
+    paths_from[outcome] = 1
 
-        except nx.NetworkXNoPath:
-            pass
+    for node in reversed(list(nx.topological_sort(R))):
+        if node == outcome:
+            continue
+        paths_from[node] = sum(paths_from[succ] for succ in R.successors(node))
 
-    return pd.DataFrame(rows)
+    # Match the old interpretation: count paths beginning at every ancestor.
+    return sum(paths_from[node] for node in R.nodes if node != outcome)
 
 
 def interpret_question(question):
@@ -219,13 +220,9 @@ else:
         nx.ancestors(H, outcome)
     )
 
-    original_paths = create_path_table(
+    original_path_count = count_paths_to_outcome(
         H,
         outcome
-    )
-
-    original_path_count = len(
-        original_paths
     )
 
     edge_impact_results = []
@@ -249,13 +246,9 @@ else:
         )
 
         # Recalculate paths
-        test_paths = create_path_table(
+        test_path_count = count_paths_to_outcome(
             H_test,
             outcome
-        )
-
-        test_path_count = len(
-            test_paths
         )
 
         # Calculate structural impact
@@ -402,13 +395,9 @@ else:
             nx.ancestors(H, outcome)
         )
 
-        original_paths = create_path_table(
+        original_path_count = count_paths_to_outcome(
             H,
             outcome
-        )
-
-        original_path_count = len(
-            original_paths
         )
 
         # Remove selected edge
@@ -427,13 +416,9 @@ else:
             )
         )
 
-        removed_paths = create_path_table(
+        removed_path_count = count_paths_to_outcome(
             H_removed,
             outcome
-        )
-
-        removed_path_count = len(
-            removed_paths
         )
 
         disconnected_nodes = (
