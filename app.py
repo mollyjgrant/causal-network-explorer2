@@ -559,7 +559,7 @@ st.divider()
 st.subheader("Natural-language network query")
 st.caption(
     "The parser converts your question into graph filters, "
-    "then NetworkX retrieves the matching subgraph."
+    "then the matching subgraph is retrieved."
 )
 
 st.markdown("#### Example questions to copy and paste")
