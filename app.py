@@ -137,16 +137,63 @@ def interpret_question(question):
     }
 
 def run_query(settings):
-    q_edges = edges[edges["bootstrap_forward"] >= settings["minimum_stability"]].copy()
+    """
+    Retrieve all upstream nodes matching the requested source filters,
+    then retain every node and edge needed to connect those matching
+    source nodes to the selected outcome.
+    """
+    q_edges = edges[
+        edges["bootstrap_forward"] >= settings["minimum_stability"]
+    ].copy()
+
     q_G = make_graph(q_edges)
-    q_H = upstream_subgraph(q_G, settings["outcome_node"])
-    keep = {
-        n for n in q_H.nodes
-        if n == settings["outcome_node"]
-        or (node_meta[n]["period"] in settings["periods"]
-            and node_meta[n]["domain"] in settings["domains"])
+
+    outcome = settings["outcome_node"]
+
+    # All nodes that are upstream of the selected outcome
+    all_ancestors = set(
+        nx.ancestors(q_G, outcome)
+    )
+
+    # Identify the upstream nodes that match the researcher's
+    # requested developmental periods and domains.
+    matching_sources = {
+        n for n in all_ancestors
+        if (
+            node_meta[n]["period"] in settings["periods"]
+            and node_meta[n]["domain"] in settings["domains"]
+        )
     }
-    return q_H.subgraph(keep).copy()
+
+    # Keep the selected matching source nodes AND every node that lies
+    # on at least one directed route from those sources to the outcome.
+    keep_nodes = {outcome}
+
+    for source in matching_sources:
+
+        keep_nodes.add(source)
+
+        try:
+            # descendants(source) ∩ ancestors(outcome) are nodes that can lie
+            # downstream of the source while still remaining upstream of outcome.
+            connecting_nodes = (
+                set(nx.descendants(q_G, source))
+                & all_ancestors
+            )
+
+            # Retain only connecting nodes that are reachable from source
+            # and can still reach the outcome.
+            keep_nodes.update(connecting_nodes)
+
+        except nx.NetworkXError:
+            pass
+
+    # Restrict to the ancestor network for the outcome.
+    q_H = q_G.subgraph(
+        keep_nodes
+    ).copy()
+
+    return q_H
 
 st.title("Developmental causal-network explorer")
 st.caption("Synthetic demonstration for hypothesis generation only.")
@@ -529,9 +576,10 @@ if st.button("Run natural-language query"):
     else:
         settings=interpret_question(question)
         st.write(
-            f'Outcome: {label_map[settings["outcome_node"]]} [{node_meta[settings["outcome_node"]]["period"]}] | '
-            f'Periods: {", ".join(settings["periods"])} | '
-            f'Domains: {", ".join(settings["domains"])} | '
+            f'Outcome: {label_map[settings["outcome_node"]]} '
+            f'[{node_meta[settings["outcome_node"]]["period"]}] | '
+            f'Source periods: {", ".join(settings["periods"])} | '
+            f'Source domains: {", ".join(settings["domains"])} | '
             f'Minimum stability: {settings["minimum_stability"]:.2f}'
         )
         Q=run_query(settings)
