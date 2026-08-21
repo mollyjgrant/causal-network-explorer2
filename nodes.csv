@@ -1,43 +1,40 @@
-node,label,person,period,domain,age_order,modifiable
-maternal_education,Maternal education,mother,Pregnancy,SES,0,False
-household_income,Household income,family,Pregnancy,SES,0,True
-housing_crowding,Housing crowding,family,Pregnancy,Built environment,0,True
-green_space_preg,Neighbourhood green space,family,Pregnancy,Built environment,0,True
-traffic_noise_preg,Traffic noise exposure,family,Pregnancy,Built environment,0,True
-access_services_preg,Access to neighbourhood services,family,Pregnancy,Built environment,0,True
-social_support_preg,Maternal social support,mother,Pregnancy,SES,0,True
-maternal_stress_preg,Maternal perceived stress,mother,Pregnancy,Parent wellbeing,0,True
-maternal_sleep_preg,Maternal sleep quality,mother,Pregnancy,Parent wellbeing,0,True
-housing_crowding_1y,Housing crowding,family,Infancy,Built environment,1,True
-green_space_1y,Neighbourhood green space,family,Infancy,Built environment,1,True
-access_services_1y,Access to neighbourhood services,family,Infancy,Built environment,1,True
-parenting_stress_1y,Parenting stress,caregiver,Infancy,Parent wellbeing,1,True
-responsive_parenting_1y,Responsive parenting,caregiver,Infancy,Parenting,1,True
-reading_1y,Shared reading,caregiver,Infancy,Parenting,1,True
-household_routines_1y,Household routines,caregiver,Infancy,Parenting,1,True
-child_sleep_1y,Child sleep,child,Infancy,Development,1,True
-child_selfreg_1y,Child self-regulation,child,Infancy,Development,1,True
-household_income_3y,Household income,family,Early childhood,SES,3,True
-green_space_3y,Neighbourhood green space,family,Early childhood,Built environment,3,True
-neighbourhood_safety_3y,Neighbourhood safety,family,Early childhood,Built environment,3,True
-access_play_3y,Access to play spaces,family,Early childhood,Built environment,3,True
-parenting_stress_3y,Parenting stress,caregiver,Early childhood,Parent wellbeing,3,True
-responsive_parenting_3y,Responsive parenting,caregiver,Early childhood,Parenting,3,True
-reading_3y,Shared reading,caregiver,Early childhood,Parenting,3,True
-screen_rules_3y,Screen-use rules,caregiver,Early childhood,Parenting,3,True
-child_sleep_3y,Child sleep,child,Early childhood,Development,3,True
-child_selfreg_3y,Child self-regulation,child,Early childhood,Development,3,True
-child_language_3y,Child language,child,Early childhood,Development,3,True
-child_socioemotional_3y,Socio-emotional development,child,Early childhood,Development,3,True
-household_income_6y,Household income,family,Middle childhood,SES,6,True
-green_space_6y,Neighbourhood green space,family,Middle childhood,Built environment,6,True
-neighbourhood_safety_6y,Neighbourhood safety,family,Middle childhood,Built environment,6,True
-access_play_6y,Access to play spaces,family,Middle childhood,Built environment,6,True
-parenting_stress_6y,Parenting stress,caregiver,Middle childhood,Parent wellbeing,6,True
-responsive_parenting_6y,Responsive parenting,caregiver,Middle childhood,Parenting,6,True
-reading_6y,Shared reading,caregiver,Middle childhood,Parenting,6,True
-screen_rules_6y,Screen-use rules,caregiver,Middle childhood,Parenting,6,True
-child_sleep_6y,Child sleep,child,Middle childhood,Development,6,True
-executive_function_6y,Executive function,child,Middle childhood,Development,6,True
-school_readiness_6y,School readiness,child,Middle childhood,Development,6,True
-child_socioemotional_6y,Socio-emotional development,child,Middle childhood,Development,6,True
+node,label,person,period,domain,age_order
+maternal_education,Maternal education,mother,Pregnancy,SES,0
+household_income_preg,Household income,family,Pregnancy,SES,0
+housing_tenure_preg,Housing tenure,family,Pregnancy,SES,0
+pm25_preg,PM2.5 exposure,mother,Pregnancy,Environmental,0
+heat_stress_preg,Heat stress exposure,mother,Pregnancy,Environmental,0
+traffic_noise_preg,Traffic noise exposure,mother,Pregnancy,Environmental,0
+household_income_1y,Household income,family,Infancy,SES,1
+pm25_1y,PM2.5 exposure,child,Infancy,Environmental,1
+heat_stress_1y,Heat stress exposure,child,Infancy,Environmental,1
+responsive_parenting_1y,Responsive parenting,caregiver,Infancy,Parenting,1
+parenting_stress_1y,Parenting stress,caregiver,Infancy,Parenting,1
+feeding_responsiveness_1y,Responsive feeding,caregiver,Infancy,Eating behaviours,1
+feeding_routine_1y,Feeding routine consistency,caregiver,Infancy,Eating behaviours,1
+household_income_3y,Household income,family,Early childhood,SES,3
+neighbourhood_ses_3y,Neighbourhood socioeconomic status,family,Early childhood,SES,3
+pm25_3y,PM2.5 exposure,child,Early childhood,Environmental,3
+heat_stress_3y,Heat stress exposure,child,Early childhood,Environmental,3
+green_space_3y,Neighbourhood green space,child,Early childhood,Environmental,3
+responsive_parenting_3y,Responsive parenting,caregiver,Early childhood,Parenting,3
+parenting_stress_3y,Parenting stress,caregiver,Early childhood,Parenting,3
+family_meals_3y,Family meal frequency,family,Early childhood,Eating behaviours,3
+fruit_veg_3y,Fruit and vegetable intake,child,Early childhood,Eating behaviours,3
+snacking_3y,Discretionary snacking,child,Early childhood,Eating behaviours,3
+food_responsiveness_3y,Food responsiveness,child,Early childhood,Eating behaviours,3
+household_income_6y,Household income,family,Middle childhood,SES,6
+neighbourhood_ses_6y,Neighbourhood socioeconomic status,family,Middle childhood,SES,6
+pm25_6y,PM2.5 exposure,child,Middle childhood,Environmental,6
+heat_stress_6y,Heat stress exposure,child,Middle childhood,Environmental,6
+green_space_6y,Neighbourhood green space,child,Middle childhood,Environmental,6
+responsive_parenting_6y,Responsive parenting,caregiver,Middle childhood,Parenting,6
+parenting_stress_6y,Parenting stress,caregiver,Middle childhood,Parenting,6
+family_meals_6y,Family meal frequency,family,Middle childhood,Eating behaviours,6
+fruit_veg_6y,Fruit and vegetable intake,child,Middle childhood,Eating behaviours,6
+snacking_6y,Discretionary snacking,child,Middle childhood,Eating behaviours,6
+food_responsiveness_6y,Food responsiveness,child,Middle childhood,Eating behaviours,6
+school_readiness_6y,School readiness,child,Middle childhood,School readiness,6
+executive_function_6y,Executive function,child,Middle childhood,School readiness,6
+language_6y,Language skills,child,Middle childhood,School readiness,6
+early_numeracy_6y,Early numeracy,child,Middle childhood,School readiness,6
