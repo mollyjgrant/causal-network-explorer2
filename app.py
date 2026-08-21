@@ -24,17 +24,10 @@ def make_graph(edge_df):
                    bootstrap_reverse=row["bootstrap_reverse"])
     return G
 
-def upstream_subgraph(G, outcome, max_steps):
-    keep, frontier = {outcome}, {outcome}
-    for _ in range(max_steps):
-        new_frontier = set()
-        for node in frontier:
-            new_frontier.update(G.predecessors(node))
-        new_frontier -= keep
-        keep.update(new_frontier)
-        frontier = new_frontier
-        if not frontier:
-            break
+def upstream_subgraph(G, outcome):
+    """Return the full upstream subgraph for an outcome."""
+    keep = set(nx.ancestors(G, outcome))
+    keep.add(outcome)
     return G.subgraph(keep).copy()
 
 def graphviz_from_nx(H):
@@ -129,11 +122,6 @@ def interpret_question(question):
     if not domains:
         domains = nodes["domain"].unique().tolist()
 
-    max_steps = 1 if any(x in q for x in ["direct","immediate","one step"]) else 4
-    m = re.search(r'(\d)\s*(?:step|steps)', q)
-    if m:
-        max_steps = max(1, min(5, int(m.group(1))))
-
     min_stability = 0.65
     if any(x in q for x in ["robust","strong","high confidence","high-confidence"]):
         min_stability = 0.80
@@ -144,14 +132,13 @@ def interpret_question(question):
         "outcome_node": outcome,
         "periods": periods,
         "domains": domains,
-        "max_steps": max_steps,
         "minimum_stability": min_stability
     }
 
 def run_query(settings):
     q_edges = edges[edges["bootstrap_forward"] >= settings["minimum_stability"]].copy()
     q_G = make_graph(q_edges)
-    q_H = upstream_subgraph(q_G, settings["outcome_node"], settings["max_steps"])
+    q_H = upstream_subgraph(q_G, settings["outcome_node"])
     keep = {
         n for n in q_H.nodes
         if n == settings["outcome_node"]
@@ -171,12 +158,11 @@ with st.sidebar:
     display = st.selectbox("Outcome", opts["display"].tolist(), index=default_i)
     outcome = opts.loc[opts["display"]==display, "node"].iloc[0]
     min_stability = st.slider("Minimum bootstrap edge frequency",0.50,1.00,0.65,0.05)
-    max_steps = st.slider("Maximum upstream steps",1,5,4)
     all_domains = sorted(nodes["domain"].unique())
     domains = st.multiselect("Keep source domains",all_domains,default=all_domains)
 
 G = make_graph(edges[edges["bootstrap_forward"]>=min_stability])
-H = upstream_subgraph(G, outcome, max_steps)
+H = upstream_subgraph(G, outcome)
 H = H.subgraph({n for n in H.nodes if n==outcome or node_meta[n]["domain"] in domains}).copy()
 
 c1,c2,c3 = st.columns(3)
@@ -572,7 +558,6 @@ if st.button("Run natural-language query"):
             f'Outcome: {label_map[settings["outcome_node"]]} [{node_meta[settings["outcome_node"]]["period"]}] | '
             f'Periods: {", ".join(settings["periods"])} | '
             f'Domains: {", ".join(settings["domains"])} | '
-            f'Max steps: {settings["max_steps"]} | '
             f'Minimum stability: {settings["minimum_stability"]:.2f}'
         )
         Q=run_query(settings)
