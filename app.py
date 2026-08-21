@@ -272,23 +272,100 @@ st.caption("Synthetic demonstration for hypothesis generation only.")
 
 with st.sidebar:
     st.header("Manual network query")
+
     opts = nodes.copy()
     opts["display"] = opts["label"] + " [" + opts["period"] + "]"
-    default_i = opts.index[opts["node"]=="executive_function_6y"][0]
-    display = st.selectbox("Outcome", opts["display"].tolist(), index=default_i)
-    outcome = opts.loc[opts["display"]==display, "node"].iloc[0]
-    min_stability = st.slider("Minimum bootstrap edge frequency",0.50,1.00,0.65,0.05)
+
+    outcome_choices = ["Full network"] + opts["display"].tolist()
+
+    default_display = opts.loc[
+        opts["node"] == "executive_function_6y",
+        "display"
+    ].iloc[0]
+
+    default_i = outcome_choices.index(default_display)
+
+    display = st.selectbox(
+        "Outcome",
+        outcome_choices,
+        index=default_i
+    )
+
+    full_network = display == "Full network"
+
+    if full_network:
+        outcome = None
+    else:
+        outcome = opts.loc[
+            opts["display"] == display,
+            "node"
+        ].iloc[0]
+
+    min_stability = st.slider(
+        "Minimum bootstrap edge frequency",
+        0.50, 1.00, 0.65, 0.05
+    )
+
     all_domains = sorted(nodes["domain"].unique())
-    domains = st.multiselect("Keep source domains",all_domains,default=all_domains)
 
-G = make_graph(edges[edges["bootstrap_forward"]>=min_stability])
-H = upstream_subgraph(G, outcome)
-H = H.subgraph({n for n in H.nodes if n==outcome or node_meta[n]["domain"] in domains}).copy()
+    domains = st.multiselect(
+        "Keep source domains",
+        all_domains,
+        default=all_domains
+    )
 
-c1,c2,c3 = st.columns(3)
-c1.metric("Retrieved nodes",H.number_of_nodes())
-c2.metric("Retrieved edges",H.number_of_edges())
-c3.metric("Outcome ancestors",len(nx.ancestors(H,outcome)) if outcome in H else 0)
+G = make_graph(
+    edges[
+        edges["bootstrap_forward"] >= min_stability
+    ]
+)
+
+if full_network:
+    # Show the full filtered network.
+    H = G.subgraph(
+        {
+            n for n in G.nodes
+            if node_meta[n]["domain"] in domains
+        }
+    ).copy()
+else:
+    # Show the complete upstream network for the selected outcome.
+    H = upstream_subgraph(G, outcome)
+
+    H = H.subgraph(
+        {
+            n for n in H.nodes
+            if (
+                n == outcome
+                or node_meta[n]["domain"] in domains
+            )
+        }
+    ).copy()
+
+c1, c2, c3 = st.columns(3)
+
+c1.metric(
+    "Retrieved nodes",
+    H.number_of_nodes()
+)
+
+c2.metric(
+    "Retrieved edges",
+    H.number_of_edges()
+)
+
+if full_network:
+    c3.metric(
+        "Selected outcome",
+        "None"
+    )
+else:
+    c3.metric(
+        "Outcome ancestors",
+        len(nx.ancestors(H, outcome))
+        if outcome in H
+        else 0
+    )
 
 st.subheader("Retrieved subgraph")
 if H.number_of_edges():
@@ -299,7 +376,7 @@ else:
 st.subheader("Structurally important nodes")
 rows=[]
 for n in H.nodes:
-    if n==outcome:
+    if outcome is not None and n == outcome:
         continue
     rows.append({
         "node":label_map[n],
@@ -323,126 +400,126 @@ st.divider()
 
 st.subheader("Automatic edge impact ranking")
 
-st.caption(
-    "Each edge is removed one at a time. An upstream connection is counted as lost "
-    "only when that upstream node can no longer reach the selected outcome by any route."
-)
+if full_network:
 
-if H.number_of_edges() == 0:
-
-    st.info("No edges available to rank.")
+    st.info(
+        "Select an outcome in the left-hand panel to run "
+        "outcome-specific edge impact ranking."
+    )
 
 else:
 
-    # Original network
-    original_ancestors = set(
-        nx.ancestors(H, outcome)
+    st.caption(
+        "Each edge is removed one at a time to estimate how much "
+        "it changes the outcome-specific hypothesis-generating network."
     )
 
-    # Treat each upstream node-to-outcome relationship as one connection,
-    # regardless of how many alternative directed routes exist between them.
-    # A connection is only counted as lost if the upstream node can no longer
-    # reach the outcome at all after the edge is removed.
-    original_connection_count = len(
-        original_ancestors
-    )
+    if H.number_of_edges() == 0:
 
-    edge_impact_results = []
+        st.info("No edges available to rank.")
 
-    # Remove each edge one at a time
-    for source, target in H.edges():
+    else:
 
-        H_test = H.copy()
-
-        H_test.remove_edge(
-            source,
-            target
+        original_ancestors = set(
+            nx.ancestors(H, outcome)
         )
 
-        # Recalculate which upstream nodes can still reach the outcome
-        test_ancestors = set(
-            nx.ancestors(
-                H_test,
-                outcome
-            )
-        )
-
-        disconnected_nodes = (
+        original_connection_count = len(
             original_ancestors
-            - test_ancestors
         )
 
-        connections_lost = len(
-            disconnected_nodes
-        )
+        edge_impact_results = []
 
-        if original_connection_count > 0:
+        for source, target in H.edges():
 
-            percent_connections_lost = (
-                connections_lost
-                / original_connection_count
-                * 100
+            H_test = H.copy()
+
+            H_test.remove_edge(
+                source,
+                target
             )
 
-        else:
+            test_ancestors = set(
+                nx.ancestors(
+                    H_test,
+                    outcome
+                )
+            )
 
-            percent_connections_lost = 0
+            disconnected_nodes = (
+                original_ancestors
+                - test_ancestors
+            )
 
-        source_period = node_meta[source]["period"]
-        target_period = node_meta[target]["period"]
+            connections_lost = len(
+                disconnected_nodes
+            )
 
-        # Store results
-        edge_impact_results.append(
-            {
-                "Edge":
-                    f"{label_map[source]} → "
-                    f"{label_map[target]}",
+            if original_connection_count > 0:
 
-                "Timepoints":
-                    f"{source_period} → "
-                    f"{target_period}",
+                percent_connections_lost = (
+                    connections_lost
+                    / original_connection_count
+                    * 100
+                )
 
-                "Upstream connections lost":
-                    connections_lost,
+            else:
 
-                "% upstream connections lost":
-                    percent_connections_lost,
+                percent_connections_lost = 0
 
-                "Nodes disconnected":
-                    len(disconnected_nodes),
+            source_period = node_meta[source]["period"]
+            target_period = node_meta[target]["period"]
 
-                "Disconnected nodes":
-                    ", ".join(
-                        f"{label_map[node]} "
-                        f"[{node_meta[node]['period']}]"
-                        for node in disconnected_nodes
-                    )
-            }
+            edge_impact_results.append(
+                {
+                    "Edge":
+                        f"{label_map[source]} → "
+                        f"{label_map[target]}",
+
+                    "Timepoints":
+                        f"{source_period} → "
+                        f"{target_period}",
+
+                    "Upstream connections lost":
+                        connections_lost,
+
+                    "% upstream connections lost":
+                        percent_connections_lost,
+
+                    "Nodes disconnected":
+                        len(disconnected_nodes),
+
+                    "Disconnected nodes":
+                        ", ".join(
+                            f"{label_map[node]} "
+                            f"[{node_meta[node]['period']}]"
+                            for node in disconnected_nodes
+                        )
+                }
+            )
+
+        edge_impact_df = pd.DataFrame(
+            edge_impact_results
         )
 
-    # Create ranked table
-    edge_impact_df = pd.DataFrame(
-        edge_impact_results
-    )
+        edge_impact_df = edge_impact_df.sort_values(
+            [
+                "% upstream connections lost",
+                "Nodes disconnected"
+            ],
+            ascending=False
+        )
 
-    edge_impact_df = edge_impact_df.sort_values(
-        [
-            "% upstream connections lost",
-            "Nodes disconnected"
-        ],
-        ascending=False
-    )
+        edge_impact_df["% upstream connections lost"] = (
+            edge_impact_df["% upstream connections lost"]
+            .round(1)
+        )
 
-    edge_impact_df["% upstream connections lost"] = (
-        edge_impact_df["% upstream connections lost"]
-        .round(1)
-    )
-
-    st.dataframe(
-        edge_impact_df,
-        use_container_width=True,
-        hide_index=True
-    )
+        st.dataframe(
+            edge_impact_df,
+            use_container_width=True,
+            hide_index=True
+        )
 
 
 # ==========================================
@@ -451,180 +528,184 @@ else:
 
 st.subheader("Edge-removal sensitivity analysis")
 
-st.caption(
-    "Select an individual edge to inspect whether its removal completely disconnects "
-    "any upstream nodes from the selected outcome."
-)
+if full_network:
 
-if H.number_of_edges() == 0:
-
-    st.info("No edges available to test.")
+    st.info(
+        "Select an outcome in the left-hand panel to run "
+        "outcome-specific edge-removal sensitivity analysis."
+    )
 
 else:
 
-    edge_options = []
-
-    for source, target in H.edges():
-
-        source_period = node_meta[source]["period"]
-        target_period = node_meta[target]["period"]
-
-        edge_options.append(
-            (
-                source,
-                target,
-                f"{label_map[source]} "
-                f"[{source_period}] → "
-                f"{label_map[target]} "
-                f"[{target_period}]"
-            )
-        )
-
-    edge_labels = [
-        item[2]
-        for item in edge_options
-    ]
-
-    selected_edge_label = st.selectbox(
-        "Select an edge to remove",
-        edge_labels
+    st.caption(
+        "Select an individual edge to inspect whether its removal completely "
+        "disconnects any upstream nodes from the selected outcome."
     )
 
-    selected_index = edge_labels.index(
-        selected_edge_label
-    )
+    if H.number_of_edges() == 0:
 
-    selected_source = edge_options[
-        selected_index
-    ][0]
+        st.info("No edges available to test.")
 
-    selected_target = edge_options[
-        selected_index
-    ][1]
+    else:
 
-    if st.button("Test edge removal"):
+        edge_options = []
 
-        # Original network
-        original_ancestors = set(
-            nx.ancestors(H, outcome)
-        )
+        for source, target in H.edges():
 
-        # Count each upstream node-to-outcome relationship once.
-        original_connection_count = len(
-            original_ancestors
-        )
+            source_period = node_meta[source]["period"]
+            target_period = node_meta[target]["period"]
 
-        # Remove selected edge
-        H_removed = H.copy()
-
-        H_removed.remove_edge(
-            selected_source,
-            selected_target
-        )
-
-        # Recalculate which upstream nodes can still reach the outcome
-        removed_ancestors = set(
-            nx.ancestors(
-                H_removed,
-                outcome
-            )
-        )
-
-        disconnected_nodes = (
-            original_ancestors
-            - removed_ancestors
-        )
-
-        connections_lost = len(
-            disconnected_nodes
-        )
-
-        if original_connection_count > 0:
-
-            percent_connections_lost = (
-                connections_lost
-                / original_connection_count
-                * 100
-            )
-
-        else:
-
-            percent_connections_lost = 0
-
-        # Display results
-        st.markdown(
-            f"### Removing: "
-            f"{label_map[selected_source]} "
-            f"[{node_meta[selected_source]['period']}] "
-            f"→ "
-            f"{label_map[selected_target]} "
-            f"[{node_meta[selected_target]['period']}]"
-        )
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        col1.metric(
-            "Original upstream connections",
-            original_connection_count
-        )
-
-        col2.metric(
-            "Upstream connections lost",
-            connections_lost
-        )
-
-        col3.metric(
-            "% upstream connections lost",
-            f"{percent_connections_lost:.1f}%"
-        )
-
-        col4.metric(
-            "Nodes disconnected",
-            len(disconnected_nodes)
-        )
-
-        st.markdown(
-            "#### Upstream nodes disconnected"
-        )
-
-        if disconnected_nodes:
-
-            disconnected_labels = [
-                f"{label_map[node]} "
-                f"[{node_meta[node]['period']}]"
-                for node in disconnected_nodes
-            ]
-
-            st.write(
-                ", ".join(
-                    disconnected_labels
+            edge_options.append(
+                (
+                    source,
+                    target,
+                    f"{label_map[source]} "
+                    f"[{source_period}] → "
+                    f"{label_map[target]} "
+                    f"[{target_period}]"
                 )
             )
 
-        else:
+        edge_labels = [
+            item[2]
+            for item in edge_options
+        ]
 
-            st.write(
-                "No upstream nodes were completely disconnected."
-            )
-
-        st.markdown(
-            "#### Network after edge removal"
+        selected_edge_label = st.selectbox(
+            "Select an edge to remove",
+            edge_labels
         )
 
-        if H_removed.number_of_edges() > 0:
+        selected_index = edge_labels.index(
+            selected_edge_label
+        )
 
-            st.graphviz_chart(
-                graphviz_from_nx(
-                    H_removed
-                ),
-                use_container_width=True
+        selected_source = edge_options[
+            selected_index
+        ][0]
+
+        selected_target = edge_options[
+            selected_index
+        ][1]
+
+        if st.button("Test edge removal"):
+
+            original_ancestors = set(
+                nx.ancestors(H, outcome)
             )
 
-        else:
-
-            st.warning(
-                "Removing this edge leaves no remaining edges."
+            original_connection_count = len(
+                original_ancestors
             )
+
+            H_removed = H.copy()
+
+            H_removed.remove_edge(
+                selected_source,
+                selected_target
+            )
+
+            removed_ancestors = set(
+                nx.ancestors(
+                    H_removed,
+                    outcome
+                )
+            )
+
+            disconnected_nodes = (
+                original_ancestors
+                - removed_ancestors
+            )
+
+            connections_lost = len(
+                disconnected_nodes
+            )
+
+            if original_connection_count > 0:
+
+                percent_connections_lost = (
+                    connections_lost
+                    / original_connection_count
+                    * 100
+                )
+
+            else:
+
+                percent_connections_lost = 0
+
+            st.markdown(
+                f"### Removing: "
+                f"{label_map[selected_source]} "
+                f"[{node_meta[selected_source]['period']}] "
+                f"→ "
+                f"{label_map[selected_target]} "
+                f"[{node_meta[selected_target]['period']}]"
+            )
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            col1.metric(
+                "Original upstream connections",
+                original_connection_count
+            )
+
+            col2.metric(
+                "Upstream connections lost",
+                connections_lost
+            )
+
+            col3.metric(
+                "% upstream connections lost",
+                f"{percent_connections_lost:.1f}%"
+            )
+
+            col4.metric(
+                "Nodes disconnected",
+                len(disconnected_nodes)
+            )
+
+            st.markdown(
+                "#### Upstream nodes disconnected"
+            )
+
+            if disconnected_nodes:
+
+                disconnected_labels = [
+                    f"{label_map[node]} "
+                    f"[{node_meta[node]['period']}]"
+                    for node in disconnected_nodes
+                ]
+
+                st.write(
+                    ", ".join(
+                        disconnected_labels
+                    )
+                )
+
+            else:
+
+                st.write(
+                    "No upstream nodes were completely disconnected."
+                )
+
+            st.markdown(
+                "#### Network after edge removal"
+            )
+
+            if H_removed.number_of_edges() > 0:
+
+                st.graphviz_chart(
+                    graphviz_from_nx(
+                        H_removed
+                    ),
+                    use_container_width=True
+                )
+
+            else:
+
+                st.warning(
+                    "Removing this edge leaves no remaining edges."
+                )
 
 
 st.divider()
