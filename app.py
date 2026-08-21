@@ -556,43 +556,272 @@ else:
 
 
 st.divider()
-st.subheader("Natural-language network query")
+st.subheader("Explore the network")
+
 st.caption(
-    "The parser converts your question into graph filters, "
-    "then the matching subgraph is retrieved."
+    "Use a guided prompt or ask your own question. "
+    "The interface translates the question into graph filters, "
+    "then NetworkX retrieves relationships from the data-derived network."
 )
 
-st.markdown("#### Example questions to copy and paste")
-st.code("What parenting factors are upstream of school readiness?", language=None)
-st.code("What parenting factors are connected to executive function?", language=None)
+# --------------------------------------------------
+# 1. QUESTION-TYPE CARDS
+# --------------------------------------------------
+
+st.markdown("### What would you like to explore?")
+
+if "nl_question" not in st.session_state:
+    st.session_state["nl_question"] = ""
+
+card1, card2, card3, card4 = st.columns(4)
+
+with card1:
+    st.markdown("#### 🔎 Influences")
+    st.caption("Explore factors upstream of a developmental outcome.")
+    st.code(
+        "What parenting factors are upstream of school readiness?",
+        language=None
+    )
+    if st.button("Try Influences", key="card_influences"):
+        st.session_state["nl_question"] = (
+            "What parenting factors are upstream of school readiness?"
+        )
+        st.rerun()
+
+with card2:
+    st.markdown("#### 🔗 Connections")
+    st.caption("Explore how a domain is connected to an outcome.")
+    st.code(
+        "What environmental factors are connected to school readiness?",
+        language=None
+    )
+    if st.button("Try Connections", key="card_connections"):
+        st.session_state["nl_question"] = (
+            "What environmental factors are connected to school readiness?"
+        )
+        st.rerun()
+
+with card3:
+    st.markdown("#### 🧭 Development")
+    st.caption("Focus on factors from a particular developmental period.")
+    st.code(
+        "What infancy parenting factors are upstream of school readiness?",
+        language=None
+    )
+    if st.button("Try Development", key="card_development"):
+        st.session_state["nl_question"] = (
+            "What infancy parenting factors are upstream of school readiness?"
+        )
+        st.rerun()
+
+with card4:
+    st.markdown("#### 🧩 Domains")
+    st.caption("Explore one scientific domain in relation to an outcome.")
+    st.code(
+        "What eating behaviour factors are upstream of school readiness?",
+        language=None
+    )
+    if st.button("Try Domains", key="card_domains"):
+        st.session_state["nl_question"] = (
+            "What eating behaviour factors are upstream of school readiness?"
+        )
+        st.rerun()
+
+st.divider()
+
+# --------------------------------------------------
+# 2. BUILD-YOUR-QUESTION STRIP
+# --------------------------------------------------
+
+st.markdown("### Build your question")
+
+builder_col1, builder_col2, builder_col3, builder_col4 = st.columns(4)
+
+available_domains = sorted(
+    nodes["domain"].dropna().unique().tolist()
+)
+
+available_periods = [
+    p for p in [
+        "Pregnancy",
+        "Infancy",
+        "Early childhood",
+        "Middle childhood"
+    ]
+    if p in nodes["period"].unique().tolist()
+]
+
+outcome_options = nodes.copy()
+outcome_options["display"] = (
+    outcome_options["label"]
+    + " ["
+    + outcome_options["period"]
+    + "]"
+)
+
+with builder_col1:
+    builder_domain = st.selectbox(
+        "Domain",
+        available_domains,
+        key="builder_domain"
+    )
+
+with builder_col2:
+    builder_period = st.selectbox(
+        "Timepoint",
+        ["Any timepoint"] + available_periods,
+        key="builder_period"
+    )
+
+with builder_col3:
+    builder_relation = st.selectbox(
+        "Relationship",
+        [
+            "upstream of",
+            "connected to"
+        ],
+        key="builder_relation"
+    )
+
+with builder_col4:
+    default_outcome_idx = 0
+    sr_matches = outcome_options.index[
+        outcome_options["label"].str.lower() == "school readiness"
+    ].tolist()
+    if sr_matches:
+        default_outcome_idx = sr_matches[0]
+
+    builder_outcome_display = st.selectbox(
+        "Outcome",
+        outcome_options["display"].tolist(),
+        index=default_outcome_idx,
+        key="builder_outcome"
+    )
+
+builder_outcome_label = outcome_options.loc[
+    outcome_options["display"] == builder_outcome_display,
+    "label"
+].iloc[0]
+
+if builder_period == "Any timepoint":
+    generated_question = (
+        f"What {builder_domain.lower()} factors are "
+        f"{builder_relation} {builder_outcome_label.lower()}?"
+    )
+else:
+    generated_question = (
+        f"What {builder_period.lower()} {builder_domain.lower()} factors are "
+        f"{builder_relation} {builder_outcome_label.lower()}?"
+    )
+
+st.markdown("**Suggested question**")
+st.info(generated_question)
+
+if st.button("Use this question", key="use_builder_question"):
+    st.session_state["nl_question"] = generated_question
+    st.rerun()
+
+st.divider()
+
+# --------------------------------------------------
+# 3. FREE-TEXT QUERY
+# --------------------------------------------------
+
+st.markdown("### Ask your own question")
 
 question = st.text_area(
-    "Ask a question",
-    placeholder="Type or paste a research question here..."
+    "Research question",
+    key="nl_question",
+    placeholder=(
+        "e.g. What infancy parenting factors are upstream of "
+        "school readiness in middle childhood?"
+    )
 )
-if st.button("Run natural-language query"):
+
+if st.button("Run natural-language query", key="run_nl_query"):
+
     if not question.strip():
+
         st.warning("Enter a question first.")
+
     else:
-        settings=interpret_question(question)
+
+        settings = interpret_question(question)
+
+        st.markdown("#### How the question was interpreted")
+
         st.write(
-            f'Outcome: {label_map[settings["outcome_node"]]} '
-            f'[{node_meta[settings["outcome_node"]]["period"]}] | '
-            f'Source periods: {", ".join(settings["periods"])} | '
-            f'Source domains: {", ".join(settings["domains"])} | '
-            f'Minimum stability: {settings["minimum_stability"]:.2f}'
+            f'**Outcome:** {label_map[settings["outcome_node"]]} '
+            f'[{node_meta[settings["outcome_node"]]["period"]}]  \n'
+            f'**Source timepoints:** {", ".join(settings["periods"])}  \n'
+            f'**Source domains:** {", ".join(settings["domains"])}  \n'
+            f'**Minimum bootstrap frequency:** '
+            f'{settings["minimum_stability"]:.2f}'
         )
-        Q=run_query(settings)
-        q1,q2,q3=st.columns(3)
-        q1.metric("Retrieved nodes",Q.number_of_nodes())
-        q2.metric("Retrieved edges",Q.number_of_edges())
-        q3.metric("Outcome ancestors",len(nx.ancestors(Q,settings["outcome_node"])) if settings["outcome_node"] in Q else 0)
+
+        Q = run_query(settings)
+
+        q1, q2, q3 = st.columns(3)
+
+        q1.metric(
+            "Retrieved nodes",
+            Q.number_of_nodes()
+        )
+
+        q2.metric(
+            "Retrieved edges",
+            Q.number_of_edges()
+        )
+
+        q3.metric(
+            "Outcome ancestors",
+            len(
+                nx.ancestors(
+                    Q,
+                    settings["outcome_node"]
+                )
+            )
+            if settings["outcome_node"] in Q
+            else 0
+        )
+
+        st.markdown("#### Retrieved network")
+
         if Q.number_of_edges():
-            st.graphviz_chart(graphviz_from_nx(Q), use_container_width=True)
+
+            st.graphviz_chart(
+                graphviz_from_nx(Q),
+                use_container_width=True
+            )
+
         else:
-            st.warning("No relationships met the interpreted query.")
-        out=[]
+
+            st.warning(
+                "No relationships met the interpreted query. "
+                "Try broadening the timepoint/domain selection or "
+                "lowering the bootstrap threshold in the main panel."
+            )
+
+        st.markdown("#### Retrieved nodes")
+
+        out_rows = []
+
         for n in Q.nodes:
-            out.append({"node":label_map[n],"period":node_meta[n]["period"],"domain":node_meta[n]["domain"]})
-        if out:
-            st.dataframe(pd.DataFrame(out), use_container_width=True, hide_index=True)
+
+            out_rows.append(
+                {
+                    "node": label_map[n],
+                    "period": node_meta[n]["period"],
+                    "domain": node_meta[n]["domain"]
+                }
+            )
+
+        if out_rows:
+
+            st.dataframe(
+                pd.DataFrame(out_rows).sort_values(
+                    ["period", "domain", "node"]
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
