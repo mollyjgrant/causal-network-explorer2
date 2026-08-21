@@ -205,8 +205,8 @@ st.divider()
 st.subheader("Automatic edge impact ranking")
 
 st.caption(
-    "Each edge is removed one at a time to estimate how much "
-    "it changes the outcome-specific hypothesis-generating network."
+    "Each edge is removed one at a time. An upstream connection is counted as lost "
+    "only when that upstream node can no longer reach the selected outcome by any route."
 )
 
 if H.number_of_edges() == 0:
@@ -220,9 +220,12 @@ else:
         nx.ancestors(H, outcome)
     )
 
-    original_path_count = count_paths_to_outcome(
-        H,
-        outcome
+    # Treat each upstream node-to-outcome relationship as one connection,
+    # regardless of how many alternative directed routes exist between them.
+    # A connection is only counted as lost if the upstream node can no longer
+    # reach the outcome at all after the edge is removed.
+    original_connection_count = len(
+        original_ancestors
     )
 
     edge_impact_results = []
@@ -237,7 +240,7 @@ else:
             target
         )
 
-        # Recalculate ancestors
+        # Recalculate which upstream nodes can still reach the outcome
         test_ancestors = set(
             nx.ancestors(
                 H_test,
@@ -245,34 +248,26 @@ else:
             )
         )
 
-        # Recalculate paths
-        test_path_count = count_paths_to_outcome(
-            H_test,
-            outcome
+        disconnected_nodes = (
+            original_ancestors
+            - test_ancestors
         )
 
-        # Calculate structural impact
-        pathways_lost = (
-            original_path_count
-            - test_path_count
+        connections_lost = len(
+            disconnected_nodes
         )
 
-        if original_path_count > 0:
+        if original_connection_count > 0:
 
-            percent_paths_lost = (
-                pathways_lost
-                / original_path_count
+            percent_connections_lost = (
+                connections_lost
+                / original_connection_count
                 * 100
             )
 
         else:
 
-            percent_paths_lost = 0
-
-        disconnected_nodes = (
-            original_ancestors
-            - test_ancestors
-        )
+            percent_connections_lost = 0
 
         source_period = node_meta[source]["period"]
         target_period = node_meta[target]["period"]
@@ -288,11 +283,11 @@ else:
                     f"{source_period} → "
                     f"{target_period}",
 
-                "Paths lost":
-                    pathways_lost,
+                "Upstream connections lost":
+                    connections_lost,
 
-                "% paths lost":
-                    percent_paths_lost,
+                "% upstream connections lost":
+                    percent_connections_lost,
 
                 "Nodes disconnected":
                     len(disconnected_nodes),
@@ -313,14 +308,14 @@ else:
 
     edge_impact_df = edge_impact_df.sort_values(
         [
-            "% paths lost",
+            "% upstream connections lost",
             "Nodes disconnected"
         ],
         ascending=False
     )
 
-    edge_impact_df["% paths lost"] = (
-        edge_impact_df["% paths lost"]
+    edge_impact_df["% upstream connections lost"] = (
+        edge_impact_df["% upstream connections lost"]
         .round(1)
     )
 
@@ -338,8 +333,8 @@ else:
 st.subheader("Edge-removal sensitivity analysis")
 
 st.caption(
-    "Select an individual edge to inspect how its removal changes "
-    "the upstream structure for the selected outcome."
+    "Select an individual edge to inspect whether its removal completely disconnects "
+    "any upstream nodes from the selected outcome."
 )
 
 if H.number_of_edges() == 0:
@@ -395,9 +390,9 @@ else:
             nx.ancestors(H, outcome)
         )
 
-        original_path_count = count_paths_to_outcome(
-            H,
-            outcome
+        # Count each upstream node-to-outcome relationship once.
+        original_connection_count = len(
+            original_ancestors
         )
 
         # Remove selected edge
@@ -408,7 +403,7 @@ else:
             selected_target
         )
 
-        # Recalculate
+        # Recalculate which upstream nodes can still reach the outcome
         removed_ancestors = set(
             nx.ancestors(
                 H_removed,
@@ -416,32 +411,26 @@ else:
             )
         )
 
-        removed_path_count = count_paths_to_outcome(
-            H_removed,
-            outcome
-        )
-
         disconnected_nodes = (
             original_ancestors
             - removed_ancestors
         )
 
-        pathways_lost = (
-            original_path_count
-            - removed_path_count
+        connections_lost = len(
+            disconnected_nodes
         )
 
-        if original_path_count > 0:
+        if original_connection_count > 0:
 
-            percent_paths_lost = (
-                pathways_lost
-                / original_path_count
+            percent_connections_lost = (
+                connections_lost
+                / original_connection_count
                 * 100
             )
 
         else:
 
-            percent_paths_lost = 0
+            percent_connections_lost = 0
 
         # Display results
         st.markdown(
@@ -456,18 +445,18 @@ else:
         col1, col2, col3, col4 = st.columns(4)
 
         col1.metric(
-            "Original pathways",
-            original_path_count
+            "Original upstream connections",
+            original_connection_count
         )
 
         col2.metric(
-            "Paths lost",
-            pathways_lost
+            "Upstream connections lost",
+            connections_lost
         )
 
         col3.metric(
-            "% paths lost",
-            f"{percent_paths_lost:.1f}%"
+            "% upstream connections lost",
+            f"{percent_connections_lost:.1f}%"
         )
 
         col4.metric(
